@@ -1,0 +1,76 @@
+name: Test Skylos security-only analysis
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file for security scan
+        run: |
+          mkdir -p /tmp/security-target
+          cat > /tmp/security-target/app.py << 'EOF'
+          """Simple Python application."""
+
+
+          def process_data(data: str) -> str:
+              """Process input data safely."""
+              return data.strip().lower()
+
+
+          def main() -> None:
+              """Main entry point."""
+              result = process_data("Hello World")
+              print(result)
+
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: /tmp/security-target
+          mode: scan
+          analysis: security
+          confidence: "60"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT_PATH"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$COUNT"
+
+      - name: Assert report file is valid JSON
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating JSON report at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at $REPORT_PATH"
+            exit 1
+          fi
+          python3 -c "import json; data = json.load(open('$REPORT_PATH')); print('Keys:', list(data.keys()))" || {
+            echo "FAIL: report is not valid JSON"
+            exit 1
+          }
+          echo "PASS: report is valid JSON"
