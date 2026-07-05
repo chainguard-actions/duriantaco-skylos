@@ -9,6 +9,7 @@ jobs:
       GITHUB_EVENT_NAME: push
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - id: action
         uses: .
         with:
@@ -16,25 +17,27 @@ jobs:
           mode: "scan"
           analysis: "dead-code"
           confidence: "60"
-          token: "dummy-token-for-testing"
+          token: "dummy-token-for-test"
           python-version: "3.11"
-      - name: Assert report-path output is set
-        env:
-          ACTUAL: ${{ steps.action.outputs.report-path }}
-        run: |
-          echo "actual report-path: $ACTUAL"
-          if [ -z "$ACTUAL" ]; then
-            echo "FAIL: report-path output was empty"
-            exit 1
-          fi
-          echo "PASS: report-path is set to $ACTUAL"
+
       - name: Assert findings-count output is set
         env:
-          ACTUAL: ${{ steps.action.outputs.findings-count }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
         run: |
-          echo "actual findings-count: $ACTUAL"
-          if [ -z "$ACTUAL" ]; then
-            echo "FAIL: findings-count output was empty"
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output was not set"
             exit 1
           fi
-          echo "PASS: findings-count is set to $ACTUAL"
+          echo "PASS: findings-count is '$FINDINGS'"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output was not set"
+            exit 1
+          fi
+          echo "PASS: report-path is '$REPORT'"

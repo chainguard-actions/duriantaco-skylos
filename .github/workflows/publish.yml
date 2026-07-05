@@ -325,8 +325,8 @@ jobs:
               "${tags[@]}" \
               --label "org.opencontainers.image.title=skylos" \
               --label "org.opencontainers.image.description=Open-source AI code security and static analysis for Python, TypeScript, and Go." \
-              --label "org.opencontainers.image.url=https://github.com/${GH_REPOSITORY}" \
-              --label "org.opencontainers.image.source=https://github.com/${GH_REPOSITORY}" \
+              --label "org.opencontainers.image.url=https://github.com/$GH_REPOSITORY" \
+              --label "org.opencontainers.image.source=https://github.com/$GH_REPOSITORY" \
               --label "org.opencontainers.image.version=${VERSION}" \
               --label "org.opencontainers.image.revision=${revision}" \
               --push \

@@ -60,14 +60,14 @@ jobs:
           REF_NAME: ${{ github.ref_name || 'main' }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            safe_base=$(printf '%s' "origin/$BASE_REF" | tr -d '\n\r')
-            echo "base=$safe_base" >> "$GITHUB_OUTPUT"
+            safe_base=$(printf '%s' "$BASE_REF" | tr -d '\n\r')
+            echo "base=origin/$safe_base" >> "$GITHUB_OUTPUT"
           elif [ -n "$EVENT_BEFORE" ] && [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
             safe_before=$(printf '%s' "$EVENT_BEFORE" | tr -d '\n\r')
             echo "base=$safe_before" >> "$GITHUB_OUTPUT"
           else
-            safe_ref=$(printf '%s' "origin/$REF_NAME" | tr -d '\n\r')
-            echo "base=$safe_ref" >> "$GITHUB_OUTPUT"
+            safe_ref=$(printf '%s' "$REF_NAME" | tr -d '\n\r')
+            echo "base=origin/$safe_ref" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run Skylos
@@ -164,6 +164,6 @@ jobs:
       - name: Summarize in job log
         if: always()
         env:
-          SCAN_REPORT: ${{ steps.scan.outputs.REPORT }}
+          SKYLOS_REPORT: ${{ steps.scan.outputs.REPORT }}
         run: |
-          echo "Skylos report: $SCAN_REPORT" >> "$GITHUB_STEP_SUMMARY"
+          echo "Skylos report: $SKYLOS_REPORT" >> "$GITHUB_STEP_SUMMARY"
