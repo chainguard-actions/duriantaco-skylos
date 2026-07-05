@@ -1,0 +1,260 @@
+from __future__ import annotations
+
+import os
+import pathlib
+import shlex
+import subprocess
+from pathlib import Path
+
+_SAFE_ADDOPTS_FLAGS = frozenset(
+    {
+        "--json",
+        "--github",
+        "--summary",
+        "--tree",
+        "--verbose",
+        "-v",
+        "--strict",
+        "--no-default-excludes",
+        "--secrets",
+        "--danger",
+        "--quality",
+        "--ai-defects",
+        "--sca",
+        "--all",
+        "-a",
+        "--no-grep-verify",
+        "--baseline",
+        "--provenance",
+        "--no-provenance",
+    }
+)
+
+_SAFE_ADDOPTS_VALUE_OPTIONS = frozenset(
+    {
+        "--format",
+        "--confidence",
+        "-c",
+        "--exclude",
+        "--exclude-folder",
+        "--include-folder",
+        "--diff-base",
+        "--diff",
+        "--severity",
+        "--category",
+        "--file-filter",
+        "--limit",
+        "--provenance-base",
+    }
+)
+
+_SAFE_ADDOPTS_CHOICES = {
+    "--format": {"rich", "pretty", "json", "llm", "github", "concise"},
+    "--severity": {"critical", "high", "medium", "low"},
+}
+
+
+def _coerce_addopts(addopts) -> list[str]:
+    if isinstance(addopts, str):
+        return shlex.split(addopts)
+    if isinstance(addopts, list):
+        return [str(item) for item in addopts]
+    return []
+
+
+def _is_safe_addopt_value(option: str, value: str) -> bool:
+    if value == "--":
+        return False
+
+    choices = _SAFE_ADDOPTS_CHOICES.get(option)
+    if choices is not None and value not in choices:
+        return False
+
+    if option in {"--confidence", "-c"}:
+        try:
+            confidence = int(value)
+        except ValueError:
+            return False
+        return 0 <= confidence <= 100
+
+    if option == "--limit":
+        try:
+            limit = int(value)
+        except ValueError:
+            return False
+        return limit >= 0
+
+    return True
+
+
+def sanitize_addopts(addopts) -> list[str]:
+    """Return pyproject addopts that cannot select paths or execution sinks."""
+
+    tokens = _coerce_addopts(addopts)
+    sanitized: list[str] = []
+    index = 0
+
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            break
+
+        if token in _SAFE_ADDOPTS_FLAGS:
+            sanitized.append(token)
+            index += 1
+            continue
+
+        if token in _SAFE_ADDOPTS_VALUE_OPTIONS:
+            if index + 1 >= len(tokens):
+                index += 1
+                continue
+            value = tokens[index + 1]
+            if _is_safe_addopt_value(token, value):
+                sanitized.extend([token, value])
+            index += 2
+            continue
+
+        if token.startswith("--") and "=" in token:
+            option, value = token.split("=", 1)
+            if option in _SAFE_ADDOPTS_VALUE_OPTIONS and _is_safe_addopt_value(
+                option, value
+            ):
+                sanitized.append(token)
+            index += 1
+            continue
+
+        index += 1
+
+    return sanitized
+
+
+def get_git_changed_files(
+    root_path,
+    base_ref=None,
+    *,
+    strict_base=False,
+    include_deleted=False,
+):
+    supported_exts = {
+        ".py",
+        ".go",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".java",
+        ".php",
+        ".rs",
+        ".dart",
+        ".env",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".toml",
+        ".ini",
+        ".cfg",
+        ".conf",
+    }
+
+    def _collect_supported(output, repo_root):
+        files = []
+        for line in output.splitlines():
+            full_path = pathlib.Path(repo_root) / line
+            if (
+                pathlib.Path(line).name != ".env"
+                and not pathlib.Path(line).name.startswith(".env.")
+                and pathlib.Path(line).suffix.lower() not in supported_exts
+            ):
+                continue
+            if full_path.exists() or include_deleted:
+                files.append(full_path)
+        return files
+
+    try:
+        repo_root = pathlib.Path(
+            subprocess.check_output(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=root_path,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+            .decode("utf-8")
+            .strip()
+        )
+        if base_ref:
+            try:
+                output = subprocess.check_output(
+                    ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
+                    cwd=repo_root,
+                    stderr=subprocess.DEVNULL,
+                    timeout=30,
+                ).decode("utf-8")
+                return _collect_supported(output, repo_root)
+            except Exception as exc:
+                if strict_base:
+                    message = f"Unable to diff against base ref {base_ref}"
+                    raise ValueError(message) from exc
+                return []
+
+        output = subprocess.check_output(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=repo_root,
+            timeout=30,
+        ).decode("utf-8")
+        files = _collect_supported(output, repo_root)
+        if files:
+            return files
+
+        base_ref = os.environ.get("GITHUB_BASE_REF")
+        if base_ref:
+            cmd = ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"]
+        else:
+            cmd = ["git", "diff", "--name-only", "origin/main...HEAD"]
+        try:
+            output = subprocess.check_output(
+                cmd, cwd=repo_root, stderr=subprocess.DEVNULL, timeout=30
+            ).decode("utf-8")
+            return _collect_supported(output, repo_root)
+        except Exception:
+            return []
+    except Exception as exc:
+        if strict_base:
+            raise ValueError("Unable to discover git changed files") from exc
+        return []
+
+
+def estimate_cost(files):
+    total_chars = 0
+    for f in files:
+        try:
+            content = f.read_text(encoding="utf-8", errors="ignore")
+            total_chars += len(content)
+        except Exception:
+            pass
+    est_tokens = total_chars / 4
+    est_cost_usd = (est_tokens / 1_000_000) * 2.50
+    return est_tokens, est_cost_usd
+
+
+def load_addopts(start_path: Path | None = None):
+    current = (start_path or Path.cwd()).resolve()
+    while True:
+        toml_path = current / "pyproject.toml"
+        if toml_path.exists():
+            try:
+                try:
+                    import tomllib
+                except ImportError:
+                    import tomli as tomllib
+
+                with open(toml_path, "rb") as f:
+                    data = tomllib.load(f)
+                addopts = data.get("tool", {}).get("skylos", {}).get("addopts", [])
+                return sanitize_addopts(addopts)
+            except Exception:
+                pass
+            break
+        if current.parent == current:
+            break
+        current = current.parent
+    return []

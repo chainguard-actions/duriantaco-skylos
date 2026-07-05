@@ -1,0 +1,78 @@
+name: Test security analysis
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file with potential security issues
+        run: |
+          mkdir -p /tmp/security-target
+          cat > /tmp/security-target/app.py << 'EOF'
+          import subprocess
+          import os
+
+          def run_command(cmd):
+              # Potentially unsafe shell usage
+              result = subprocess.run(cmd, shell=True, capture_output=True)
+              return result.stdout
+
+          def get_env():
+              return os.environ.get("SECRET_KEY", "default-secret")
+
+          if __name__ == "__main__":
+              output = run_command("ls -la")
+              print(output)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: /tmp/security-target
+          mode: scan
+          analysis: security
+          confidence: "50"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output was not set"
+            exit 1
+          fi
+          echo "PASS: findings-count is '$FINDINGS'"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output was not set"
+            exit 1
+          fi
+          echo "PASS: report-path is '$REPORT'"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking report file: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at '$REPORT'"
+            exit 1
+          fi
+          python3 -c "
+          import json
+          import os
+          report_path = os.environ.get('REPORT', 'skylos-report.json')
+          with open(report_path) as f:
+              data = json.load(f)
+          print('Report keys:', list(data.keys()))
+          print('PASS: report is valid JSON')
+          "

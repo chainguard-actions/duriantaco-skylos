@@ -1,0 +1,61 @@
+name: Test custom Python version
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Python file to scan
+        run: |
+          mkdir -p /tmp/py-version-target
+          cat > /tmp/py-version-target/sample.py << 'EOF'
+          def add(a, b):
+              return a + b
+
+          total = add(1, 2)
+          print(total)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: /tmp/py-version-target
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+          python-version: "3.11"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output was not set"
+            exit 1
+          fi
+          echo "PASS: findings-count is '$FINDINGS'"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output was not set"
+            exit 1
+          fi
+          echo "PASS: report-path is '$REPORT'"
+
+      - name: Assert Python 3.11 is active
+        run: |
+          PYVER=$(python --version 2>&1)
+          echo "Python version: $PYVER"
+          if ! echo "$PYVER" | grep -q "3.11"; then
+            echo "FAIL: expected Python 3.11, got '$PYVER'"
+            exit 1
+          fi
+          echo "PASS: Python 3.11 is active"
