@@ -58,8 +58,10 @@ jobs:
         if: github.event_name == 'pull_request' && always()
         env:
           GH_TOKEN: ${{ github.token }}
-          BASE_REF: ${{ github.base_ref || 'main' }}
-        run: skylos cicd review --input skylos-results.json --diff-base "origin/$BASE_REF"
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          diff_base="origin/${BASE_REF:-main}"
+          skylos cicd review --input skylos-results.json --diff-base "$diff_base"
 
       - name: Upload Skylos Results for Cross-Reference
         if: always()

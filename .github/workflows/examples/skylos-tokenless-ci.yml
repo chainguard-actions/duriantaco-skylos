@@ -42,5 +42,5 @@ jobs:
 
       - name: Scan and upload
         env:
-          GH_SHA: ${{ github.sha }}
-        run: skylos . --danger --quality --secrets --ai-defects --upload --force --sha "$GH_SHA"
+          COMMIT_SHA: ${{ github.sha }}
+        run: skylos . --danger --quality --secrets --ai-defects --upload --force --sha "$COMMIT_SHA"

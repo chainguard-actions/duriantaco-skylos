@@ -4,18 +4,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - id: action
         uses: .
         with:
-          path: .
-          mode: scan
-          analysis: dead-code
+          path: "."
+          mode: "scan"
+          analysis: "dead-code"
           confidence: "60"
-          token: dummy-token-for-testing
-          python-version: "3.11"
+          token: "dummy-token-for-testing"
 
       - name: Assert findings-count output is set
         env:
@@ -26,7 +28,7 @@ jobs:
             echo "FAIL: findings-count output was not set"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: findings-count=$FINDINGS"
 
       - name: Assert report-path output is set
         env:
@@ -37,4 +39,4 @@ jobs:
             echo "FAIL: report-path output was not set"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: report-path=$REPORT"

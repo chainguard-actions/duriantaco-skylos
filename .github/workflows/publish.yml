@@ -60,8 +60,7 @@ jobs:
             echo "Expected a semantic release tag like v4.2.1, got: $tag" >&2
             exit 1
           fi
-          safe_tag="$(printf '%s' "$tag" | tr -d '\n\r')"
-          echo "tag=$safe_tag" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -268,17 +267,14 @@ jobs:
         shell: bash
         run: |
           version="${RELEASE_TAG#v}"
-          safe_version="$(printf '%s' "$version" | tr -d '\n\r')"
-          echo "version=$safe_version" >> "$GITHUB_OUTPUT"
-          if [[ "$safe_version" == *-* ]]; then
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then
             echo "stable=false" >> "$GITHUB_OUTPUT"
           else
             echo "stable=true" >> "$GITHUB_OUTPUT"
-            IFS='.' read -r major minor patch <<< "$safe_version"
-            safe_major="$(printf '%s' "$major" | tr -d '\n\r')"
-            safe_minor="$(printf '%s' "$minor" | tr -d '\n\r')"
-            echo "major=$safe_major" >> "$GITHUB_OUTPUT"
-            echo "minor=$safe_minor" >> "$GITHUB_OUTPUT"
+            IFS='.' read -r major minor patch <<< "$version"
+            echo "major=$major" >> "$GITHUB_OUTPUT"
+            echo "minor=$minor" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build smoke image
@@ -309,7 +305,7 @@ jobs:
           STABLE: ${{ steps.meta.outputs.stable }}
           MAJOR: ${{ steps.meta.outputs.major }}
           MINOR: ${{ steps.meta.outputs.minor }}
-          GH_REPOSITORY: ${{ github.repository }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
         run: |
           revision="$(git rev-parse HEAD)"
           tags=(
@@ -329,8 +325,8 @@ jobs:
               "${tags[@]}" \
               --label "org.opencontainers.image.title=skylos" \
               --label "org.opencontainers.image.description=Open-source AI code security and static analysis for Python, TypeScript, and Go." \
-              --label "org.opencontainers.image.url=https://github.com/${GH_REPOSITORY}" \
-              --label "org.opencontainers.image.source=https://github.com/${GH_REPOSITORY}" \
+              --label "org.opencontainers.image.url=https://github.com/${GITHUB_REPOSITORY_NAME}" \
+              --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY_NAME}" \
               --label "org.opencontainers.image.version=${VERSION}" \
               --label "org.opencontainers.image.revision=${revision}" \
               --push \
