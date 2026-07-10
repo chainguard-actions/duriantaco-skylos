@@ -1,0 +1,42 @@
+name: Test Skylos gate mode with clean code
+on:
+  workflow_dispatch:
+
+jobs:
+  test-gate-clean:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: skylos
+        uses: .
+        with:
+          path: tests/fixtures/clean_sample.py
+          mode: gate
+          analysis: dead-code security
+          confidence: "60"
+
+      - name: Assert gate-passed is true
+        env:
+          GATE: ${{ steps.skylos.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: $GATE"
+          if [ "$GATE" != "true" ]; then
+            echo "FAIL: expected gate-passed=true but got '$GATE'"
+            exit 1
+          fi
+          echo "PASS: gate passed as expected"
+
+      - name: Assert findings-count is a number
+        env:
+          FINDINGS: ${{ steps.skylos.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"

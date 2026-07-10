@@ -1,0 +1,58 @@
+name: Test Skylos dead code detection
+on:
+  workflow_dispatch:
+
+jobs:
+  test-dead-code:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: skylos
+        uses: .
+        with:
+          path: tests/fixtures/dead_code_sample.py
+          mode: scan
+          analysis: dead-code
+          confidence: "50"
+        continue-on-error: true
+
+      - name: Assert findings-count is a number
+        env:
+          FINDINGS: ${{ steps.skylos.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert dead code was detected (findings > 0)
+        env:
+          FINDINGS: ${{ steps.skylos.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ "$FINDINGS" -eq 0 ]; then
+            echo "FAIL: expected dead code findings but got 0"
+            exit 1
+          fi
+          echo "PASS: dead code detected, findings=$FINDINGS"
+
+      - name: Assert report file is valid JSON
+        env:
+          REPORT: ${{ steps.skylos.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path is empty"
+            exit 1
+          fi
+          if ! python3 -c "import json; json.load(open('$REPORT'))" 2>&1; then
+            echo "FAIL: report file is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: report is valid JSON"

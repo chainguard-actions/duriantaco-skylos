@@ -1,0 +1,58 @@
+name: Test token input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: "."
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "60"
+          token: "dummy-token-for-testing"
+          python-version: "3.11"
+
+      - name: Assert report-path output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "actual report-path: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$ACTUAL"
+
+      - name: Assert findings-count output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "actual findings-count: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$ACTUAL" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a number: $ACTUAL"
+            exit 1
+          fi
+          echo "PASS: findings-count=$ACTUAL"
+
+      - name: Assert report file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "checking report file: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists"
