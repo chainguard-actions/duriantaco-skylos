@@ -234,6 +234,7 @@ jobs:
           STABLE: ${{ steps.meta.outputs.stable }}
           MAJOR: ${{ steps.meta.outputs.major }}
           MINOR: ${{ steps.meta.outputs.minor }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
         run: |
           revision="$(git rev-parse HEAD)"
           tags=(
@@ -253,8 +254,8 @@ jobs:
               "${tags[@]}" \
               --label "org.opencontainers.image.title=skylos" \
               --label "org.opencontainers.image.description=Open-source AI code security and static analysis for Python, TypeScript, and Go." \
-              --label "org.opencontainers.image.url=https://github.com/${{ github.repository }}" \
-              --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+              --label "org.opencontainers.image.url=https://github.com/${GITHUB_REPOSITORY_NAME}" \
+              --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY_NAME}" \
               --label "org.opencontainers.image.version=${VERSION}" \
               --label "org.opencontainers.image.revision=${revision}" \
               --push \

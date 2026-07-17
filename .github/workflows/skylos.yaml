@@ -53,13 +53,21 @@ jobs:
       - name: Resolve diff base
         id: diff
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          REF_NAME: ${{ github.ref_name || 'main' }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "base=origin/${{ github.base_ref || 'main' }}" >> "$GITHUB_OUTPUT"
-          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
-            echo "base=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            safe_base=$(printf '%s' "origin/$BASE_REF" | tr -d '\n\r')
+            echo "base=$safe_base" >> "$GITHUB_OUTPUT"
+          elif [ -n "$EVENT_BEFORE" ] && [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            safe_base=$(printf '%s' "$EVENT_BEFORE" | tr -d '\n\r')
+            echo "base=$safe_base" >> "$GITHUB_OUTPUT"
           else
-            echo "base=origin/${{ github.ref_name || 'main' }}" >> "$GITHUB_OUTPUT"
+            safe_base=$(printf '%s' "origin/$REF_NAME" | tr -d '\n\r')
+            echo "base=$safe_base" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run Skylos
@@ -99,5 +107,7 @@ jobs:
 
       - name: Summarize in job log
         if: always()
+        env:
+          REPORT: ${{ steps.scan.outputs.REPORT }}
         run: |
-          echo "Skylos report: ${{ steps.scan.outputs.REPORT }}" >> $GITHUB_STEP_SUMMARY
+          echo "Skylos report: $REPORT" >> "$GITHUB_STEP_SUMMARY"

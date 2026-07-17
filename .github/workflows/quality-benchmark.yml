@@ -6,6 +6,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   quality-benchmark:
     runs-on: ubuntu-latest
@@ -45,9 +48,12 @@ jobs:
       - name: Run quality benchmark (base)
         if: github.event_name == 'pull_request'
         shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          git worktree add /tmp/skylos-quality-base "${{ github.event.pull_request.base.sha }}"
+          git fetch origin "$BASE_REF" --depth=1
+          git worktree add /tmp/skylos-quality-base "$BASE_SHA"
           cd /tmp/skylos-quality-base
           uv venv
           uv pip install -e .

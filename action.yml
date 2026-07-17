@@ -84,21 +84,21 @@ runs:
         echo "report=$REPORT" >> "$GITHUB_OUTPUT"
 
         # Build flags from analysis types
-        FLAGS=()
+        FLAGS=""
         if echo "$SKYLOS_ANALYSIS" | grep -q "security"; then
-          FLAGS+=("--danger")
+          FLAGS="$FLAGS --danger"
         fi
         if echo "$SKYLOS_ANALYSIS" | grep -q "quality"; then
-          FLAGS+=("--quality")
+          FLAGS="$FLAGS --quality"
         fi
         if echo "$SKYLOS_ANALYSIS" | grep -q "secrets"; then
-          FLAGS+=("--secrets")
+          FLAGS="$FLAGS --secrets"
         fi
 
         # Run scan
         python -m skylos.cli "$SKYLOS_PATH" \
           --confidence "$SKYLOS_CONFIDENCE" \
-          "${FLAGS[@]}" \
+          $FLAGS \
           --json > "$REPORT" || true
 
         # Count findings
@@ -120,20 +120,20 @@ runs:
         SKYLOS_CONFIDENCE: ${{ inputs.confidence }}
       run: |
         # Upload works with SKYLOS_TOKEN or tokenless via GitHub OIDC
-        FLAGS=()
+        FLAGS=""
         if echo "$SKYLOS_ANALYSIS" | grep -q "security"; then
-          FLAGS+=("--danger")
+          FLAGS="$FLAGS --danger"
         fi
         if echo "$SKYLOS_ANALYSIS" | grep -q "quality"; then
-          FLAGS+=("--quality")
+          FLAGS="$FLAGS --quality"
         fi
         if echo "$SKYLOS_ANALYSIS" | grep -q "secrets"; then
-          FLAGS+=("--secrets")
+          FLAGS="$FLAGS --secrets"
         fi
 
         python -m skylos.cli "$SKYLOS_PATH" \
           --confidence "$SKYLOS_CONFIDENCE" \
-          "${FLAGS[@]}" \
+          $FLAGS \
           --upload || echo "Upload failed (non-fatal)"
     - name: Post GitHub Annotations
       if: always()

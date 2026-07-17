@@ -10,12 +10,11 @@ jobs:
       - id: action
         uses: .
         with:
-          path: .
-          mode: scan
-          analysis: dead-code
-          confidence: "60"
-          token: "dummy-token-for-coverage"
-          python-version: "3.11"
+          path: "."
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "80"
+          token: "fake-skylos-token-for-testing"
 
       - name: Assert findings-count output is set
         env:
@@ -38,3 +37,14 @@ jobs:
             exit 1
           fi
           echo "PASS: report-path is set to '$REPORT'"
+
+      - name: Assert report file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report file: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists"

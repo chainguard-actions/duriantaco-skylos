@@ -38,9 +38,11 @@ jobs:
           GOCACHE=/tmp/skylos-go-build GOPATH=/tmp/skylos-go-gopath go build -o skylos-go ./cmd/skylos-go
 
       - name: Create venv + install deps
+        env:
+          INSTALL_TARGET: ${{ matrix.install_target }}
         run: |
           uv venv
-          uv pip install -e "${{ matrix.install_target }}"
+          uv pip install -e "$INSTALL_TARGET"
           uv pip install pytest pytest-cov
 
       - name: Run tests with coverage
@@ -87,9 +89,12 @@ jobs:
 
     steps:
       - name: Require matrix success
+        env:
+          TEST_MATRIX_RESULT: ${{ needs.test_matrix.result }}
+          DOCKER_SMOKE_RESULT: ${{ needs.docker_smoke.result }}
         run: |
-          if [ "${{ needs.test_matrix.result }}" != "success" ] || [ "${{ needs.docker_smoke.result }}" != "success" ]; then
-            echo "test_matrix result: ${{ needs.test_matrix.result }}"
-            echo "docker_smoke result: ${{ needs.docker_smoke.result }}"
+          if [ "$TEST_MATRIX_RESULT" != "success" ] || [ "$DOCKER_SMOKE_RESULT" != "success" ]; then
+            echo "test_matrix result: $TEST_MATRIX_RESULT"
+            echo "docker_smoke result: $DOCKER_SMOKE_RESULT"
             exit 1
           fi
