@@ -1,0 +1,341 @@
+from __future__ import annotations
+from pathlib import Path
+import re
+import shlex
+from typing import Optional
+
+from rich.console import Console
+
+console = Console()
+
+ANALYSIS_FLAG_MAP: dict[str, str] = {
+    "dead-code": "",
+    "dependency": "--sca",
+    "dependencies": "--sca",
+    "sca": "--sca",
+    "security": "--danger",
+    "quality": "--quality",
+    "secrets": "--secrets",
+}
+
+SKYLOS_DEFENSE_RESULTS_SHELL_PATH = '"$RUNNER_TEMP/defense-results.json"'
+PINNED_ACTIONS_CHECKOUT = "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+PINNED_ACTIONS_SETUP_PYTHON = "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065"
+PINNED_ACTIONS_UPLOAD_ARTIFACT = "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+PINNED_ACTIONS_DOWNLOAD_ARTIFACT = "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+PINNED_CLAUDE_CODE_ACTION = "anthropics/claude-code-action@1dc994ee7a008f0ecc866d9ac23ef036b7229f84"
+
+
+def _installed_skylos_version() -> str | None:
+    try:
+        from skylos import __version__
+
+        version = str(__version__).strip()
+    except Exception:
+        return None
+    return version or None
+
+
+def _skylos_install_command(version: str | None = None) -> str:
+    resolved = version if version is not None else _installed_skylos_version()
+    if resolved and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.!+~-]*", resolved):
+        return f"python -m pip install {shlex.quote(f'skylos=={resolved}')}"
+    return "python -m pip install skylos"
+
+
+def _shell_path(path: str | Path | None) -> str:
+    raw = str(path or ".")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in raw):
+        raise ValueError("scan_path must not contain control characters")
+    raw = raw.strip() or "."
+    if raw.startswith("-"):
+        raw = f"./{raw}"
+    return shlex.quote(raw)
+
+
+def _upload_env_block() -> str:
+    return """        env:
+          SKYLOS_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          SKYLOS_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}"""
+
+
+def generate_workflow(
+    *,
+    triggers: Optional[list[str]] = None,
+    analysis_types: Optional[list[str]] = None,
+    python_version: str = "3.12",
+    use_baseline: bool = True,
+    use_llm: bool = False,
+    model: Optional[str] = None,
+    use_claude_security: bool = False,
+    use_upload: bool = False,
+    use_defend: bool = False,
+    advisory_gate: bool = False,
+    scan_path: str = ".",
+    skylos_version: str | None = None,
+) -> str:
+    """
+    Generate the GitHub Actions workflow YAML for Skylos scans.
+
+    Calls: skylos/cicd/workflow.py _build_trigger_block;
+        skylos/cicd/workflow.py _skylos_install_command;
+        skylos/cicd/workflow.py _shell_path;
+        skylos/cicd/workflow.py _build_claude_security_jobs.
+
+    Called from: skylos/commands/cicd_cmd.py run_cicd_command.
+    """
+    triggers = triggers or ["pull_request", "push"]
+    analysis_types = analysis_types or [
+        "dead-code",
+        "security",
+        "quality",
+        "secrets",
+        "dependency",
+    ]
+
+    trigger_block = _build_trigger_block(triggers)
+    install_command = _skylos_install_command(skylos_version)
+    scan_target = _shell_path(scan_path)
+    analysis_flags = " ".join(
+        ANALYSIS_FLAG_MAP[t]
+        for t in analysis_types
+        if t in ANALYSIS_FLAG_MAP and ANALYSIS_FLAG_MAP[t]
+    )
+    if analysis_flags:
+        analysis_flags = " " + analysis_flags
+    baseline_flag = " --baseline" if use_baseline else ""
+    upload_flag = ""
+    if use_upload:
+        upload_flag = " --upload"
+    analysis_run = "\n".join(
+        [
+            '          if [ "${{ github.event_name }}" = "pull_request" ]; then',
+            '            pr_base_ref="origin/${GITHUB_BASE_REF:-main}"',
+            (
+                f"            skylos {scan_target}{analysis_flags}{baseline_flag}{upload_flag} "
+                '--diff-base "$pr_base_ref" --diff "$pr_base_ref" '
+                "--json -o skylos-results.json"
+            ),
+            "          else",
+            f"            skylos {scan_target}{analysis_flags}{baseline_flag}{upload_flag} --json -o skylos-results.json",
+            "          fi",
+        ]
+    )
+    analysis_upload_env = f"\n{_upload_env_block()}" if use_upload else ""
+
+    llm_step = ""
+    if use_llm:
+        model_str = model or "gpt-4.1"
+        api_key_env = ""
+        if model_str and "claude" in model_str.lower():
+            api_key_env = (
+                "\n          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}"
+            )
+        llm_step = "\n".join(
+            [
+                "",
+                "      - name: Skylos Agent Review (LLM)",
+                "        if: github.event_name == 'pull_request'",
+                (
+                    f"        run: skylos agent scan {scan_target} "
+                    f"--model {shlex.quote(model_str)} --changed --format json "
+                    "-o skylos-llm-results.json"
+                ),
+                "        env:",
+                "          SKYLOS_API_KEY: ${{ secrets.SKYLOS_API_KEY }}" + api_key_env,
+            ]
+        )
+    defend_step = ""
+    if use_defend:
+        defend_parts = [
+            "",
+            "      - name: AI Defense Check",
+            f"        run: skylos defend {scan_target} --fail-on critical --min-score 70 --json -o {SKYLOS_DEFENSE_RESULTS_SHELL_PATH}{' --upload' if use_upload else ''}",
+        ]
+        if use_upload:
+            defend_parts.append(_upload_env_block())
+        defend_step = "\n".join(defend_parts)
+
+    review_args = ["--input skylos-results.json"]
+    if use_llm:
+        review_args.append("--llm-input skylos-llm-results.json")
+    if use_defend:
+        review_args.append(f"--defense-input {SKYLOS_DEFENSE_RESULTS_SHELL_PATH}")
+    review_args.extend(['--diff-base "$pr_base_ref"', "--evidence-cards"])
+    review_command = "skylos cicd review " + " ".join(review_args)
+    review_run = "\n".join(
+        [
+            '          pr_base_ref="origin/${GITHUB_BASE_REF:-main}"',
+            f"          {review_command}",
+        ]
+    )
+    skylos_environment = "\n    environment: skylos-security" if use_llm else ""
+    gate_advisory_flag = " --advisory" if advisory_gate else ""
+
+    permissions_block = """permissions:
+  contents: read"""
+
+    sync_step = """
+      - name: Pull Skylos Cloud Policy
+        run: |
+          skylos sync pull || echo "No Skylos Cloud policy available through GitHub OIDC; continuing with local config."
+"""
+
+    workflow = f"""name: Skylos Analysis
+
+{trigger_block}
+
+{permissions_block}
+
+jobs:
+  skylos:
+    name: Skylos Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+{skylos_environment}
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: {PINNED_ACTIONS_CHECKOUT}
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: {PINNED_ACTIONS_SETUP_PYTHON}
+        with:
+          python-version: '{python_version}'
+
+      - name: Install Skylos
+        run: {install_command}
+{sync_step}
+
+      - name: Run Skylos Analysis
+        run: |
+{analysis_run}{analysis_upload_env}
+{llm_step}{defend_step}
+      - name: Quality Gate
+        if: always()
+        run: skylos cicd gate --input skylos-results.json --summary{gate_advisory_flag}
+
+      - name: GitHub Annotations
+        if: always()
+        run: skylos cicd annotate --input skylos-results.json
+
+      - name: PR Review Comments
+        if: github.event_name == 'pull_request' && always()
+        run: |
+{review_run}
+        env:
+          GH_TOKEN: ${{{{ github.token }}}}
+{
+        ""
+        if not use_claude_security
+        else '''
+      - name: Upload Skylos Results for Cross-Reference
+        if: always()
+        uses: {PINNED_ACTIONS_UPLOAD_ARTIFACT}
+        with:
+          name: skylos-results
+          path: skylos-results.json
+          if-no-files-found: error
+'''
+    }"""
+
+    if use_claude_security:
+        workflow += _build_claude_security_jobs(python_version, install_command)
+
+    return workflow
+
+
+def _build_claude_security_jobs(python_version: str, install_command: str) -> str:
+    return f"""
+  claude-security:
+    runs-on: ubuntu-latest
+    environment: skylos-security
+    steps:
+      - name: Checkout
+        uses: {PINNED_ACTIONS_CHECKOUT}
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run Claude Code Security Review
+        uses: {PINNED_CLAUDE_CODE_ACTION}
+        with:
+          anthropic_api_key: ${{{{ secrets.ANTHROPIC_API_KEY }}}}
+          direct_prompt: "/review --output-file claude-security-results.json"
+
+      - name: Upload Claude Security Results
+        if: always()
+        uses: {PINNED_ACTIONS_UPLOAD_ARTIFACT}
+        with:
+          name: claude-security-results
+          path: claude-security-results.json
+          if-no-files-found: error
+
+  upload-claude-findings:
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [skylos, claude-security]
+    steps:
+      - name: Checkout
+        uses: {PINNED_ACTIONS_CHECKOUT}
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: {PINNED_ACTIONS_SETUP_PYTHON}
+        with:
+          python-version: '{python_version}'
+
+      - name: Install Skylos
+        run: {install_command}
+
+      - name: Download Claude Security Results
+        uses: {PINNED_ACTIONS_DOWNLOAD_ARTIFACT}
+        with:
+          name: claude-security-results
+
+      - name: Download Skylos Results
+        uses: {PINNED_ACTIONS_DOWNLOAD_ARTIFACT}
+        with:
+          name: skylos-results
+
+      - name: Ingest Claude Security Findings
+        run: skylos ingest claude-security --input claude-security-results.json --cross-reference skylos-results.json
+"""
+
+
+def _build_trigger_block(triggers: list[str]) -> str:
+    lines = ['"on":']
+    for trigger in triggers:
+        if trigger == "pull_request":
+            lines.append("  pull_request:")
+            lines.append("    branches: [main]")
+        elif trigger == "push":
+            lines.append("  push:")
+            lines.append("    branches: [main]")
+        elif trigger == "schedule":
+            lines.append("  schedule:")
+            lines.append("    - cron: '0 6 * * 1'  # Weekly Monday 6am")
+        elif trigger == "workflow_dispatch":
+            lines.append("  workflow_dispatch:")
+        else:
+            lines.append(f"  {trigger}:")
+    return "\n".join(lines)
+
+
+def write_workflow(content: str, output_path: str):
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if path.exists():
+        console.print(f"[yellow]Overwriting existing workflow: {path}[/yellow]")
+
+    path.write_text(content)
+    console.print(f"[bold green]Workflow written to {path}[/bold green]")
+    console.print(f"[dim]Commit and push to activate: git add {path} && git push[/dim]")
