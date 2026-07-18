@@ -63,11 +63,11 @@ jobs:
             safe_base=$(printf '%s' "origin/$BASE_REF" | tr -d '\n\r')
             echo "base=$safe_base" >> "$GITHUB_OUTPUT"
           elif [ -n "$EVENT_BEFORE" ] && [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
-            safe_before=$(printf '%s' "$EVENT_BEFORE" | tr -d '\n\r')
-            echo "base=$safe_before" >> "$GITHUB_OUTPUT"
+            safe_base=$(printf '%s' "$EVENT_BEFORE" | tr -d '\n\r')
+            echo "base=$safe_base" >> "$GITHUB_OUTPUT"
           else
-            safe_ref=$(printf '%s' "origin/$REF_NAME" | tr -d '\n\r')
-            echo "base=$safe_ref" >> "$GITHUB_OUTPUT"
+            safe_base=$(printf '%s' "origin/$REF_NAME" | tr -d '\n\r')
+            echo "base=$safe_base" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run Skylos

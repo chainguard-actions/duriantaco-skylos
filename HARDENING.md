@@ -1,6 +1,6 @@
 <!-- markdownlint-disable -->
 
-# Hardening Report: duriantaco--skylos--/v4.27.0
+# Hardening Report: duriantaco--skylos/v4.27.0
 
 > This file was generated automatically by the hardening agent.
 
@@ -8,186 +8,80 @@
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
-**Harden Agent Version:** `1`
+**Harden Agent Version:** `2`
 
-Action **duriantaco--skylos--/v4.27.0** was hardened automatically. 17 finding(s) were identified and resolved across 2 iteration(s).
+Action **duriantaco--skylos/v4.27.0** was hardened automatically. 3 finding(s) were identified and resolved across 3 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Rule (a): Direct expression interpolation in run: blocks. action.yml 'Install Skylos' step interpolates ${{ github.action_path }} directly in a shell command: `python -m pip install "${{ github.action_path }}"`.
+Sub-rule (a): The 'Install Skylos' step directly interpolates `${{ github.action_path }}` inside a `run:` shell command string: `run: python -m pip install "${{ github.action_path }}"`. Any `${{ ... }}` expression directly inside a `run:` block is a script-injection risk because YAML template substitution occurs before the shell ever sees the value, bypassing shell quoting.
 
 Locations:
 
-- `action.yml:59`
+- `action.yml:55`
 
 ### script-injection (severity: high)
 
-Rule (a): Direct expression interpolation in run: blocks. corpus.yml 'Run curated corpus guard (base)' step interpolates ${{ github.base_ref }} and ${{ github.event.pull_request.base.sha }} directly in shell commands: `git fetch origin "${{ github.base_ref }}"` and `git worktree add /tmp/skylos-corpus-base "${{ github.event.pull_request.base.sha }}"`.
+Sub-rule (b): In the 'Run Skylos Scan' step, the shell variable `$FLAGS` is used unquoted in the `python -m skylos.cli` invocation (`$FLAGS \`). `FLAGS` is constructed from `$SKYLOS_ANALYSIS`, which is sourced from `inputs.analysis` (an untrusted caller-controlled input). Unquoted expansion allows an attacker to inject shell metacharacters (`;`, `|`, `&`, `$(...)`, etc.) via the `analysis` input.
 
 Locations:
 
-- `.github/workflows/corpus.yml:49`
+- `action.yml:80`
 
 ### script-injection (severity: high)
 
-Rule (a): Direct expression interpolation in run: blocks. quality-benchmark.yml 'Run quality benchmark (base)' step interpolates ${{ github.base_ref }} and ${{ github.event.pull_request.base.sha }} directly in shell commands.
+Sub-rule (b): In the 'Upload to Skylos Dashboard' step, the shell variable `$FLAGS` is used unquoted in the `python -m skylos.cli` invocation (`$FLAGS \`). `FLAGS` is constructed from `$SKYLOS_ANALYSIS`, which is sourced from `inputs.analysis` (an untrusted caller-controlled input). Unquoted expansion allows an attacker to inject shell metacharacters via the `analysis` input.
 
 Locations:
 
-- `.github/workflows/quality-benchmark.yml:42`
-
-### script-injection (severity: high)
-
-Rule (a): Direct expression interpolation in run: blocks. skylos.yaml 'Resolve diff base' step interpolates ${{ github.event_name }}, ${{ github.base_ref || 'main' }}, ${{ github.event.before }}, and ${{ github.ref_name || 'main' }} directly in shell commands.
-
-Locations:
-
-- `.github/workflows/skylos.yaml:52`
-
-### script-injection (severity: high)
-
-Rule (a): Direct expression interpolation in run: blocks. skylos.yaml 'Summarize in job log' step interpolates ${{ steps.scan.outputs.REPORT }} directly in a shell command: `echo "Skylos report: ${{ steps.scan.outputs.REPORT }}" >> $GITHUB_STEP_SUMMARY`.
-
-Locations:
-
-- `.github/workflows/skylos.yaml:148`
-
-### script-injection (severity: high)
-
-Rule (a): Direct expression interpolation in run: blocks. tests.yaml 'Create venv + install deps' step interpolates ${{ matrix.install_target }} directly in a shell command: `uv pip install -e "${{ matrix.install_target }}"`.
-
-Locations:
-
-- `.github/workflows/tests.yaml:33`
-
-### script-injection (severity: high)
-
-Rule (a): Direct expression interpolation in run: blocks. tests.yaml 'Require matrix success' step interpolates ${{ needs.test_matrix.result }} and ${{ needs.docker_smoke.result }} directly in shell commands.
-
-Locations:
-
-- `.github/workflows/tests.yaml:72`
-
-### script-injection (severity: high)
-
-Rule (a): Direct expression interpolation in run: blocks. publish.yml 'Build and push multi-arch image' step interpolates ${{ github.repository }} directly in shell commands used as Docker labels.
-
-Locations:
-
-- `.github/workflows/publish.yml:183`
-
-### script-injection (severity: high)
-
-Rule (a): Direct expression interpolation in run: blocks. examples/skylos-plus-claude-security.yml 'PR Review Comments' step interpolates ${{ github.base_ref || 'main' }} directly in a shell command: `skylos cicd review --input skylos-results.json --diff-base origin/${{ github.base_ref || 'main' }}`.
-
-Locations:
-
-- `.github/workflows/examples/skylos-plus-claude-security.yml:47`
-
-### script-injection (severity: high)
-
-Rule (a): Direct expression interpolation in run: blocks. examples/skylos-tokenless-ci.yml 'Scan and upload' step interpolates ${{ github.sha }} directly in a shell command: `skylos . --danger --quality --secrets --ai-defects --upload --force --sha "${{ github.sha }}"`.
-
-Locations:
-
-- `.github/workflows/examples/skylos-tokenless-ci.yml:32`
-
-### github-env-injection (severity: high)
-
-skylos.yaml 'Resolve diff base' step writes github.base_ref, github.event.before, and github.ref_name directly to $GITHUB_OUTPUT without the required sanitization (printf '%s' ... | tr -d '\n\r'). Example: `echo "base=origin/${{ github.base_ref || 'main' }}" >> "$GITHUB_OUTPUT"`.
-
-Locations:
-
-- `.github/workflows/skylos.yaml:52`
-
-### github-env-injection (severity: high)
-
-skylos.yaml 'Run Skylos' step sets env var REPORT from ${{ github.run_number }} and ${{ github.sha }}, then writes it to $GITHUB_OUTPUT without sanitization: `echo "REPORT=$REPORT" >> "$GITHUB_OUTPUT"`.
-
-Locations:
-
-- `.github/workflows/skylos.yaml:72`
-
-### permissions (severity: medium)
-
-missing-permissions: analyzer-speed.yml has no top-level permissions: key and no job-level permissions: key on any job. This grants the default (potentially broad) token permissions.
-
-Locations:
-
-- `.github/workflows/analyzer-speed.yml:1`
-
-### permissions (severity: medium)
-
-missing-permissions: corpus.yml has no top-level permissions: key and no job-level permissions: key on any job. This grants the default (potentially broad) token permissions.
-
-Locations:
-
-- `.github/workflows/corpus.yml:1`
-
-### permissions (severity: medium)
-
-missing-permissions: quality-benchmark.yml has no top-level permissions: key and no job-level permissions: key on any job. This grants the default (potentially broad) token permissions.
-
-Locations:
-
-- `.github/workflows/quality-benchmark.yml:1`
-
-### unpinned-uses (severity: high)
-
-Multiple unpinned uses: references found using tags or branch names instead of full SHA digests: actions/checkout@v4 (3 occurrences), actions/setup-python@v5 (2 occurrences), actions/upload-artifact@v4, anthropics/claude-code-action@main (branch ref), actions/download-artifact@v4 (2 occurrences).
-
-Locations:
-
-- `.github/workflows/examples/skylos-plus-claude-security.yml:34`
-- `.github/workflows/examples/skylos-plus-claude-security.yml:61`
-- `.github/workflows/examples/skylos-plus-claude-security.yml:68`
-
-### unpinned-uses (severity: high)
-
-Multiple unpinned uses: references found using tags instead of full SHA digests: actions/checkout@v4, actions/setup-python@v5.
-
-Locations:
-
-- `.github/workflows/examples/skylos-tokenless-ci.yml:20`
-- `.github/workflows/examples/skylos-tokenless-ci.yml:25`
+- `action.yml:109`
 
 ## Iteration Notes
 
 ### Iteration 1
 
-**Fixes applied:** script-injection, github-env-injection, permissions, unpinned-uses
+**Fixes applied:** script-injection
 
 **Notes:**
 
-Fixed all 17 findings across 8 files:
+Fixed all three script-injection findings in hardened/action/action.yml:
+1. 'Install Skylos' step (line 55): Moved `${{ github.action_path }}` into an `env:` block as `ACTION_PATH` and referenced it as `"$ACTION_PATH"` in the run command, eliminating direct YAML template interpolation in the shell string.
+2. 'Run Skylos Scan' step (line 80): Replaced the unquoted string variable `$FLAGS` with a bash array (`FLAGS=()`; `FLAGS+=("--flag")`; `"${FLAGS[@]}"`). Each flag is now a separate, properly-quoted array element, preventing shell metacharacter injection via the `analysis` input.
+3. 'Upload to Skylos Dashboard' step (line 109): Applied the same bash-array fix as finding 2 to the identical FLAGS pattern in the upload step.
 
-1. action.yml: Moved github.action_path to env block (ACTION_PATH) in 'Install Skylos' step.
+### Iteration 1
 
-2. corpus.yml: Added 'permissions: contents: read' at top level. Moved github.base_ref and github.event.pull_request.base.sha to env block in 'Run curated corpus guard (base)' step.
+**Fixes applied:** script-injection, github-env-injection, missing-permissions, unpinned-uses
 
-3. quality-benchmark.yml: Added 'permissions: contents: read' at top level. Moved github.base_ref and github.event.pull_request.base.sha to env block in 'Run quality benchmark (base)' step.
+**Notes:**
 
-4. analyzer-speed.yml: Added 'permissions: contents: read' at top level.
+Fixed all 14 findings across 7 workflow files:
 
-5. skylos.yaml: (a) 'Resolve diff base' step - moved all four github context expressions (event_name, base_ref, event.before, ref_name) to env block and sanitized all values written to GITHUB_OUTPUT with printf/tr. (b) 'Run Skylos' step - sanitized REPORT before writing to GITHUB_OUTPUT. (c) 'Summarize in job log' step - moved steps.scan.outputs.REPORT to env block as SCAN_REPORT.
+1. corpus.yml: Added `permissions: contents: read`; moved github.base_ref and github.event.pull_request.base.sha to env: block in 'Run curated corpus guard (base)' step.
 
-6. tests.yaml: Moved matrix.install_target to env block in 'Create venv + install deps'. Moved needs.test_matrix.result and needs.docker_smoke.result to env block in 'Require matrix success'.
+2. quality-benchmark.yml: Added `permissions: contents: read`; moved github.base_ref and github.event.pull_request.base.sha to env: block in 'Run quality benchmark (base)' step.
 
-7. publish.yml: Moved github.repository to env block as GITHUB_REPOSITORY_NAME in 'Build and push multi-arch image'.
+3. analyzer-speed.yml: Added `permissions: contents: read`.
 
-8. examples/skylos-plus-claude-security.yml: Moved github.base_ref to env block in 'PR Review Comments'. Pinned all unpinned actions: actions/checkout@v4→34e114876b0b11c390a56381ad16ebd13914f8d5, actions/setup-python@v5→a26af69be951a213d495a4c3e4e4022e16d87065, actions/upload-artifact@v4→ea165f8d65b6e75b540449e92b4886f43607fa02, anthropics/claude-code-action@main→58a2944bbcf1a73b1ae7960995fffca4fa29b113, actions/download-artifact@v4→d3f86a106a0bac45b974a628896c90dbdf5c8093.
+4. skylos.yaml: Fixed 'Resolve diff base' step by moving all 4 github expressions (event_name, base_ref, event.before, ref_name) to env: block and adding `printf '%s' ... | tr -d '\n\r'` sanitization before each `echo >> $GITHUB_OUTPUT`. Fixed 'Run Skylos' step by adding sanitization before writing REPORT to GITHUB_OUTPUT. Fixed 'Summarize in job log' step by moving steps.scan.outputs.REPORT to env: block.
 
-9. examples/skylos-tokenless-ci.yml: Moved github.sha to env block as GIT_SHA in 'Scan and upload'. Pinned actions/checkout@v4→34e114876b0b11c390a56381ad16ebd13914f8d5 and actions/setup-python@v5→a26af69be951a213d495a4c3e4e4022e16d87065.
+5. tests.yaml: Moved matrix.install_target to env: block in 'Create venv + install deps' step. Moved needs.test_matrix.result and needs.docker_smoke.result to env: block in 'Require matrix success' step.
+
+6. publish.yml: Added GH_REPOSITORY env var and replaced ${{ github.repository }} with $GH_REPOSITORY in 'Build and push multi-arch image' step.
+
+7. examples/skylos-plus-claude-security.yml: Pinned all 5 unpinned actions to full SHA commits; moved github.base_ref to env: block in 'PR Review Comments' step.
+
+8. examples/skylos-tokenless-ci.yml: Pinned actions/checkout and actions/setup-python to full SHA commits; moved github.sha to env: block in 'Scan and upload' step.
 
 ### Iteration 2
 
-**Fixes applied:** github-env-injection
+**Fixes applied:** github-env-injection, github-env-injection
 
 **Notes:**
 
-Fixed two github-env-injection findings in .github/workflows/publish.yml:
-1. 'Resolve release tag input' step: Added `safe_tag=$(printf '%s' "$tag" | tr -d '\n\r')` before writing to GITHUB_OUTPUT, replacing the direct use of `$tag`.
-2. 'Derive image metadata' step: Added sanitization for `version` (`safe_version`), `major` (`safe_major`), and `minor` (`safe_minor`) using `printf '%s' ... | tr -d '\n\r'` before each write to GITHUB_OUTPUT. The sanitized variables are also used in the `*-*` check and IFS split to maintain consistency.
+Fixed two github-env-injection findings in hardened/action/.github/workflows/publish.yml:
+1. 'Resolve release tag input' step (line ~63): Added `safe_tag="$(printf '%s' "$tag" | tr -d '\n\r')"` before writing to GITHUB_OUTPUT, replacing `echo "tag=$tag"` with `echo "tag=$safe_tag"`.
+2. 'Derive image metadata' step (line ~253): Added `safe_version="$(printf '%s' "$version" | tr -d '\n\r')"` and used it throughout; also added `safe_major` and `safe_minor` sanitization before writing major/minor to GITHUB_OUTPUT. All caller-controlled values are now stripped of newlines before being written to the output file.
 

@@ -1,0 +1,72 @@
+name: Test basic scan mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/sample-python
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output was not set"
+            exit 1
+          fi
+          echo "PASS: findings-count is set to '$FINDINGS'"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count '$FINDINGS' is not a non-negative integer"
+            exit 1
+          fi
+          echo "PASS: findings-count '$FINDINGS' is a valid non-negative integer"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output was not set"
+            exit 1
+          fi
+          echo "PASS: report-path is set to '$REPORT'"
+
+      - name: Assert report file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report file: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file '$REPORT' does not exist"
+            exit 1
+          fi
+          echo "PASS: report file exists"
+
+      - name: Assert report is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating JSON in: $REPORT"
+          if ! python3 -c "import json; json.load(open('$REPORT'))" 2>&1; then
+            echo "FAIL: report is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: report is valid JSON"

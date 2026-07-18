@@ -4,35 +4,36 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_REF: refs/heads/main
-      GITHUB_EVENT_NAME: push
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - id: action
         uses: .
         with:
-          path: .
-          mode: scan
-          analysis: dead-code
-          confidence: "60"
-          token: "dummy-token-for-testing"
-          python-version: "3.11"
+          path: "."
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "80"
+          token: "test-token-value"
+
       - name: Assert findings-count output is set
         env:
           FINDINGS: ${{ steps.action.outputs.findings-count }}
-          REPORT: ${{ steps.action.outputs.report-path }}
-          GATE: ${{ steps.action.outputs.gate-passed }}
         run: |
           echo "findings-count: $FINDINGS"
-          echo "report-path: $REPORT"
-          echo "gate-passed: $GATE"
           if [ -z "$FINDINGS" ]; then
-            echo "FAIL: findings-count output is empty"
+            echo "FAIL: findings-count output was not set"
             exit 1
           fi
+          echo "PASS: findings-count output is set to '$FINDINGS'"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
           if [ -z "$REPORT" ]; then
-            echo "FAIL: report-path output is empty"
+            echo "FAIL: report-path output was not set"
             exit 1
           fi
-          echo "PASS: token input accepted and scan completed"
+          echo "PASS: report-path output is set to '$REPORT'"

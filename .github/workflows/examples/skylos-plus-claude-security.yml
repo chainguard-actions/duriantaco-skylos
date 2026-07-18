@@ -57,8 +57,8 @@ jobs:
       - name: PR Review Comments
         if: github.event_name == 'pull_request' && always()
         env:
-          GH_TOKEN: ${{ github.token }}
           BASE_REF: ${{ github.base_ref || 'main' }}
+          GH_TOKEN: ${{ github.token }}
         run: skylos cicd review --input skylos-results.json --diff-base "origin/$BASE_REF"
 
       - name: Upload Skylos Results for Cross-Reference
@@ -78,7 +78,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Claude Code Security Review
-        uses: anthropics/claude-code-action@58a2944bbcf1a73b1ae7960995fffca4fa29b113 # main
+        uses: anthropics/claude-code-action@3553f84341b92da26052e28acf1aa898f9511f32 # main
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           direct_prompt: "/review --output-file claude-security-results.json"

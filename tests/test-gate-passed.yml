@@ -1,0 +1,50 @@
+name: Test gate mode passes on clean code
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean-python
+          mode: gate
+          analysis: dead-code
+          confidence: "60"
+
+      - name: Assert gate-passed output is set
+        env:
+          GATE: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: $GATE"
+          if [ -z "$GATE" ]; then
+            echo "FAIL: gate-passed output was not set"
+            exit 1
+          fi
+          echo "PASS: gate-passed is set to '$GATE'"
+
+      - name: Assert gate passed (true)
+        env:
+          GATE: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: $GATE"
+          if [ "$GATE" != "true" ]; then
+            echo "FAIL: expected gate-passed=true but got '$GATE'"
+            exit 1
+          fi
+          echo "PASS: gate passed as expected for clean code"
+
+      - name: Assert findings-count is zero or a number
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count '$FINDINGS' is not a non-negative integer"
+            exit 1
+          fi
+          echo "PASS: findings-count is '$FINDINGS'"
