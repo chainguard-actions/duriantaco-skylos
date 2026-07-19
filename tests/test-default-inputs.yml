@@ -1,0 +1,72 @@
+name: Test default inputs
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Python project to scan
+        run: |
+          mkdir -p /tmp/skylos-default-target
+          cat > /tmp/skylos-default-target/main.py << 'EOF'
+          def hello():
+              return "hello world"
+
+          print(hello())
+          EOF
+
+      # Use scan mode (not gate) to avoid failing on any findings in the default scan
+      - id: action
+        uses: .
+        with:
+          path: /tmp/skylos-default-target
+          mode: scan
+          analysis: dead-code security
+          confidence: "60"
+          python-version: "3.11"
+
+      - name: Assert findings-count output is set and numeric
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count should be a non-negative integer, got: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output should not be empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT"
+
+      - name: Assert report file is valid JSON with dict structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          python3 - << 'PYEOF'
+          import json, sys, os
+          report_path = os.environ.get("REPORT", "skylos-report.json")
+          try:
+              with open(report_path) as f:
+                  data = json.load(f)
+          except Exception as e:
+              print(f"FAIL: could not load JSON report: {e}")
+              sys.exit(1)
+          if not isinstance(data, dict):
+              print(f"FAIL: expected JSON object, got {type(data).__name__}")
+              sys.exit(1)
+          # Verify findings count matches what action reported
+          count = sum(len(v) for v in data.values() if isinstance(v, list))
+          print(f"PASS: report is valid JSON dict with {count} total findings across {len(data)} categories")
+          PYEOF

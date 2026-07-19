@@ -1,0 +1,70 @@
+name: Test Skylos gate mode (quality gate)
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: ${{ github.workspace }}/pristine/duriantaco--skylos/v4.23.0/tests/fixtures
+          mode: gate
+          analysis: dead-code security
+          confidence: "90"
+        # Gate may exit 1 if findings exceed threshold; we continue to check outputs
+        continue-on-error: true
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT"
+
+      - name: Assert findings-count output is a number
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$COUNT"
+
+      - name: Assert gate-passed output is set to true or false
+        env:
+          GATE: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: $GATE"
+          if [ "$GATE" != "true" ] && [ "$GATE" != "false" ]; then
+            echo "FAIL: gate-passed should be 'true' or 'false', got '$GATE'"
+            exit 1
+          fi
+          echo "PASS: gate-passed=$GATE"
+
+      - name: Assert report file is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating JSON report: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at $REPORT"
+            exit 1
+          fi
+          python3 -c "import json; json.load(open('$REPORT'))" || {
+            echo "FAIL: report file is not valid JSON"
+            exit 1
+          }
+          echo "PASS: report is valid JSON"

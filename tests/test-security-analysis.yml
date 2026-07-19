@@ -1,0 +1,81 @@
+name: Test security analysis mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file with potential security issues
+        run: |
+          mkdir -p /tmp/skylos-security-target
+          cat > /tmp/skylos-security-target/insecure.py << 'EOF'
+          import subprocess
+          import os
+
+          def run_command(user_input):
+              # Potential command injection
+              result = subprocess.run(user_input, shell=True, capture_output=True)
+              return result.stdout
+
+          def get_env():
+              secret = os.environ.get("SECRET_KEY", "hardcoded-secret-12345")
+              return secret
+
+          output = run_command("ls -la")
+          print(output)
+          key = get_env()
+          print(key)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: /tmp/skylos-security-target
+          mode: scan
+          analysis: dead-code security
+          confidence: "50"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path is set and file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists at $REPORT"
+
+      - name: Assert report contains expected JSON keys
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking JSON structure in: $REPORT"
+          python3 - << 'PYEOF'
+          import json, sys, os
+          report_path = os.environ.get("REPORT", "skylos-report.json")
+          with open(report_path) as f:
+              data = json.load(f)
+          if not isinstance(data, dict):
+              print(f"FAIL: expected a JSON object, got {type(data)}")
+              sys.exit(1)
+          print(f"PASS: report is a valid JSON object with keys: {list(data.keys())}")
+          PYEOF

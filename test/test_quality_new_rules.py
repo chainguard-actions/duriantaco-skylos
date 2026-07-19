@@ -1,0 +1,226 @@
+import ast
+from skylos.rules.quality.logic import UnusedExceptVarRule, ReturnConsistencyRule
+from skylos.rules.quality.class_size import GodClassRule, GodFileRule
+
+
+def check_code(rule, code, filename="test.py"):
+    tree = ast.parse(code)
+    findings = []
+    context = {"filename": filename, "mod": "test_module"}
+    for node in ast.walk(tree):
+        res = rule.visit_node(node, context)
+        if res:
+            findings.extend(res)
+    return findings
+
+
+class TestUnusedExceptVar:
+    def test_unused_exception_variable(self):
+        code = "try:\n    pass\nexcept ValueError as e:\n    print('oops')\n"
+        findings = check_code(UnusedExceptVarRule(), code)
+        assert len(findings) == 1
+        assert findings[0]["rule_id"] == "SKY-L005"
+        assert "e" in findings[0]["message"]
+
+    def test_used_exception_variable(self):
+        code = "try:\n    pass\nexcept ValueError as e:\n    print(e)\n"
+        findings = check_code(UnusedExceptVarRule(), code)
+        assert len(findings) == 0
+
+    def test_bare_except_no_var(self):
+        code = "try:\n    pass\nexcept:\n    pass\n"
+        findings = check_code(UnusedExceptVarRule(), code)
+        assert len(findings) == 0
+
+    def test_underscore_convention(self):
+        code = "try:\n    pass\nexcept ValueError as _:\n    print('ignored')\n"
+        findings = check_code(UnusedExceptVarRule(), code)
+        assert len(findings) == 1
+
+    def test_multiple_except_one_unused(self):
+        code = (
+            "try:\n"
+            "    pass\n"
+            "except ValueError as e:\n"
+            "    print('oops')\n"
+            "except TypeError as e2:\n"
+            "    print(e2)\n"
+        )
+        findings = check_code(UnusedExceptVarRule(), code)
+        assert len(findings) == 1
+        assert findings[0]["name"] == "e"
+
+    def test_used_in_logging(self):
+        code = (
+            "import logging\n"
+            "try:\n"
+            "    pass\n"
+            "except Exception as exc:\n"
+            "    logging.error(exc)\n"
+        )
+        findings = check_code(UnusedExceptVarRule(), code)
+        assert len(findings) == 0
+
+
+class TestReturnConsistency:
+    def test_inconsistent_explicit_return_vs_bare_return(self):
+        code = "def f(x):\n    if x > 0:\n        return x * 2\n    return\n"
+        findings = check_code(ReturnConsistencyRule(), code)
+        assert len(findings) == 1
+        assert findings[0]["rule_id"] == "SKY-L006"
+        assert "inconsistent" in findings[0]["message"].lower()
+
+    def test_consistent_return_value(self):
+        code = "def f(x):\n    if x > 0:\n        return x * 2\n    return 0\n"
+        findings = check_code(ReturnConsistencyRule(), code)
+        assert len(findings) == 0
+
+    def test_consistent_return_none(self):
+        code = "def f(x):\n    if x > 0:\n        return\n    return\n"
+        findings = check_code(ReturnConsistencyRule(), code)
+        assert len(findings) == 0
+
+    def test_explicit_return_none_mixed(self):
+        code = "def f(x):\n    if x > 0:\n        return x\n    return None\n"
+        findings = check_code(ReturnConsistencyRule(), code)
+        assert len(findings) == 1
+
+    def test_async_function_inconsistent(self):
+        code = "async def f(x):\n    if x > 0:\n        return x\n    return\n"
+        findings = check_code(ReturnConsistencyRule(), code)
+        assert len(findings) == 1
+
+    def test_nested_function_not_confused(self):
+        code = (
+            "def outer(x):\n"
+            "    def inner():\n"
+            "        return 42\n"
+            "    if x:\n"
+            "        return x\n"
+            "    return 0\n"
+        )
+        findings = check_code(ReturnConsistencyRule(), code)
+        assert len(findings) == 0
+
+    def test_only_implicit_return_no_flag(self):
+        code = "def f(x):\n    if x > 0:\n        return x * 2\n"
+        findings = check_code(ReturnConsistencyRule(), code)
+        assert len(findings) == 0
+
+
+class TestGodClass:
+    def _make_big_class(self, method_count, attr_count):
+        methods = ""
+        for i in range(method_count):
+            methods += f"    def m{i}(self):\n        self.attr{i} = {i}\n"
+        if attr_count > method_count:
+            init_body = ""
+            for i in range(method_count, attr_count):
+                init_body += f"        self.attr{i} = {i}\n"
+            methods = f"    def __init__(self):\n{init_body}" + methods
+        return f"class BigClass:\n{methods}"
+
+    def test_too_many_methods(self):
+        code = self._make_big_class(method_count=21, attr_count=5)
+        findings = check_code(GodClassRule(), code)
+        rule_ids = [f["rule_id"] for f in findings]
+        assert "SKY-Q501" in rule_ids
+        method_finding = [
+            f for f in findings if isinstance(f["value"], int) and f["value"] >= 21
+        ][0]
+        assert method_finding["threshold"] == 20
+
+    def test_too_many_attributes(self):
+        code = self._make_big_class(method_count=5, attr_count=16)
+        findings = check_code(GodClassRule(), code)
+        rule_ids = [f["rule_id"] for f in findings]
+        assert "SKY-Q501" in rule_ids
+        attr_finding = [f for f in findings if f["value"] == 16][0]
+        assert attr_finding["threshold"] == 15
+
+    def test_both_violations(self):
+        code = self._make_big_class(method_count=21, attr_count=16)
+        findings = check_code(GodClassRule(), code)
+        assert len(findings) == 2
+
+    def test_small_class_safe(self):
+        code = (
+            "class SmallClass:\n"
+            "    def __init__(self):\n"
+            "        self.x = 1\n"
+            "    def do_thing(self):\n"
+            "        pass\n"
+        )
+        findings = check_code(GodClassRule(), code)
+        assert len(findings) == 0
+
+    def test_custom_thresholds(self):
+        code = self._make_big_class(method_count=6, attr_count=4)
+        findings = check_code(GodClassRule(max_methods=5, max_attributes=3), code)
+        method_findings = [
+            f
+            for f in findings
+            if isinstance(f["value"], int) and f["value"] >= 6 and f["threshold"] == 5
+        ]
+        attr_findings = [
+            f
+            for f in findings
+            if isinstance(f["value"], int) and f["value"] >= 4 and f["threshold"] == 3
+        ]
+        assert len(method_findings) >= 1
+        assert len(attr_findings) >= 1
+
+
+class TestGodFile:
+    def test_too_many_code_lines(self):
+        code = "\n".join(f"x{i} = {i}" for i in range(11))
+        findings = check_code(
+            GodFileRule(
+                max_lines=10,
+                max_definitions=99,
+                max_top_level_definitions=99,
+            ),
+            code,
+        )
+
+        assert len(findings) == 1
+        assert findings[0]["rule_id"] == "SKY-Q502"
+        assert findings[0]["metric"] == "code_lines"
+        assert findings[0]["value"] == 11
+        assert findings[0]["threshold"] == 10
+
+    def test_too_many_definitions(self):
+        code = "\n".join(f"def f{i}():\n    return {i}" for i in range(6))
+        findings = check_code(
+            GodFileRule(
+                max_lines=99,
+                max_definitions=5,
+                max_top_level_definitions=99,
+            ),
+            code,
+        )
+
+        assert len(findings) == 1
+        assert findings[0]["rule_id"] == "SKY-Q502"
+        assert findings[0]["metric"] == "total_definitions"
+        assert findings[0]["total_definitions"] == 6
+        assert findings[0]["top_level_definitions"] == 6
+
+    def test_small_file_safe(self):
+        code = (
+            "def load_user():\n"
+            "    return 1\n\n"
+            "class UserService:\n"
+            "    def get(self):\n"
+            "        return load_user()\n"
+        )
+        findings = check_code(
+            GodFileRule(
+                max_lines=20,
+                max_definitions=10,
+                max_top_level_definitions=10,
+            ),
+            code,
+        )
+
+        assert len(findings) == 0

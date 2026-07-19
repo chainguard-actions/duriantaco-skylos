@@ -1,0 +1,247 @@
+from __future__ import annotations
+from pathlib import Path
+from tree_sitter import Language, Query, QueryCursor
+
+from .nextjs import (
+    NEXTJS_IMPORTED_CONVENTION_EXPORTS,
+    is_nextjs_convention_export,
+    is_nextjs_default_export_file,
+)
+
+_REACT_WRAPPERS: set[str] = {"memo", "forwardRef"}
+
+_QUERY_CACHE: dict[tuple[int, str], Query] = {}
+
+_FW_PATTERN = """
+(import_statement source: (string) @import_src)
+(export_statement (function_declaration name: (identifier) @export_func_name))
+(export_statement (class_declaration name: (type_identifier) @export_class_name))
+(export_statement (identifier) @export_default_ident)
+(export_statement (lexical_declaration (variable_declarator name: (identifier) @export_var_name)))
+(export_specifier name: (identifier) @export_spec_name)
+(function_declaration name: (identifier) @func_name)
+(variable_declarator name: (identifier) @var_name)
+(class_declaration name: (type_identifier) @class_name)
+"""
+
+
+def _get_query(lang: Language, key: str, pattern: str) -> Query | None:
+    cache_key = (id(lang), key)
+    if cache_key not in _QUERY_CACHE:
+        try:
+            _QUERY_CACHE[cache_key] = Query(lang, pattern)
+        except Exception:
+            _QUERY_CACHE[cache_key] = None
+    return _QUERY_CACHE[cache_key]
+
+
+def _run_batch(root_node, lang: Language, key: str, pattern: str) -> dict[str, list]:
+    query = _get_query(lang, key, pattern)
+    if query is None:
+        return {}
+    try:
+        cursor = QueryCursor(query)
+        return cursor.captures(root_node)
+    except Exception:
+        return {}
+
+
+class TSFrameworkVisitor:
+    def __init__(self) -> None:
+        self.is_test_file: bool = False
+        self.test_decorated_lines: set[int] = set()
+        self.dataclass_fields: set[str] = set()
+        self.pydantic_models: set[str] = set()
+        self.class_defs: dict = {}
+        self.first_read_lineno: dict = {}
+        self.framework_decorated_lines: set[int] = set()
+        self.detected_frameworks: set[str] = set()
+
+    def __getstate__(self) -> dict:
+        return {
+            "is_test_file": self.is_test_file,
+            "test_decorated_lines": self.test_decorated_lines,
+            "dataclass_fields": self.dataclass_fields,
+            "pydantic_models": self.pydantic_models,
+            "class_defs": self.class_defs,
+            "first_read_lineno": self.first_read_lineno,
+            "framework_decorated_lines": self.framework_decorated_lines,
+            "detected_frameworks": self.detected_frameworks,
+        }
+
+    def __setstate__(self, state: dict) -> None:
+        self.is_test_file = bool(state.get("is_test_file", False))
+        self.test_decorated_lines = set(state.get("test_decorated_lines", set()))
+        self.dataclass_fields = set(state.get("dataclass_fields", set()))
+        self.pydantic_models = set(state.get("pydantic_models", set()))
+        self.class_defs = dict(state.get("class_defs", {}))
+        self.first_read_lineno = dict(state.get("first_read_lineno", {}))
+        self.framework_decorated_lines = set(
+            state.get("framework_decorated_lines", set())
+        )
+        self.detected_frameworks = set(state.get("detected_frameworks", set()))
+
+    def scan(
+        self,
+        file_path: str,
+        root_node,
+        source: bytes,
+        lang: Language | None,
+    ) -> None:
+        if root_node is None or lang is None:
+            return
+
+        self._source = source
+        self._lang = lang
+        self._root = root_node
+        self._file_path = file_path
+        self._basename = Path(file_path).name
+
+        self._captures = _run_batch(root_node, lang, "framework", _FW_PATTERN)
+
+        self._detect_frameworks()
+        self._scan_file_conventions()
+        self._scan_nextjs_named_exports()
+        self._scan_react_patterns()
+        self._scan_custom_hooks()
+
+    def _get_text(self, node) -> str:
+        return self._source[node.start_byte : node.end_byte].decode("utf-8")
+
+    def _line_of(self, node) -> int:
+        return node.start_point[0] + 1
+
+    def _detect_frameworks(self) -> None:
+        for src_node in self._captures.get("import_src", []):
+            raw = self._get_text(src_node).strip("'\"")
+            if raw == "next" or raw.startswith("next/"):
+                self.detected_frameworks.add("next")
+            if raw == "react" or raw.startswith("react/") or raw == "react-dom":
+                self.detected_frameworks.add("react")
+
+    def _scan_file_conventions(self) -> None:
+        if is_nextjs_default_export_file(self._file_path):
+            self._mark_default_export()
+
+    def _mark_default_export(self) -> None:
+        for node in self._captures.get("export_func_name", []):
+            export_stmt = node.parent
+            if export_stmt:
+                export_stmt = export_stmt.parent  # export_statement
+            if export_stmt and "default" in self._get_text(export_stmt)[:30]:
+                self.framework_decorated_lines.add(self._line_of(node))
+                return
+
+        for node in self._captures.get("export_class_name", []):
+            export_stmt = node.parent
+            if export_stmt:
+                export_stmt = export_stmt.parent
+            if export_stmt and "default" in self._get_text(export_stmt)[:30]:
+                self.framework_decorated_lines.add(self._line_of(node))
+                return
+
+        for node in self._captures.get("export_default_ident", []):
+            export_stmt = node.parent
+            if export_stmt and "default" in self._get_text(export_stmt)[:30]:
+                target_name = self._get_text(node)
+                self._mark_definition_by_name(target_name)
+                return
+
+    def _mark_named_exports(self, names: set[str]) -> None:
+        for node in self._captures.get("export_func_name", []):
+            if self._get_text(node) in names:
+                self.framework_decorated_lines.add(self._line_of(node))
+
+        for node in self._captures.get("export_var_name", []):
+            if self._get_text(node) in names:
+                self.framework_decorated_lines.add(self._line_of(node))
+
+        for node in self._captures.get("export_spec_name", []):
+            text = self._get_text(node)
+            if text in names:
+                self._mark_definition_by_name(text)
+
+    def _mark_definition_by_name(self, name: str) -> None:
+        for node in self._captures.get("func_name", []):
+            if self._get_text(node) == name:
+                self.framework_decorated_lines.add(self._line_of(node))
+                return
+
+        for node in self._captures.get("var_name", []):
+            if self._get_text(node) == name:
+                self.framework_decorated_lines.add(self._line_of(node))
+                return
+
+        for node in self._captures.get("class_name", []):
+            if self._get_text(node) == name:
+                self.framework_decorated_lines.add(self._line_of(node))
+                return
+
+    def _scan_nextjs_named_exports(self) -> None:
+        for node in self._captures.get("export_func_name", []):
+            name = self._get_text(node)
+            if (
+                name in NEXTJS_IMPORTED_CONVENTION_EXPORTS
+                and "next" in self.detected_frameworks
+            ) or is_nextjs_convention_export(name, self._file_path):
+                self.framework_decorated_lines.add(self._line_of(node))
+
+        for node in self._captures.get("export_var_name", []):
+            name = self._get_text(node)
+            if (
+                name in NEXTJS_IMPORTED_CONVENTION_EXPORTS
+                and "next" in self.detected_frameworks
+            ) or is_nextjs_convention_export(name, self._file_path):
+                self.framework_decorated_lines.add(self._line_of(node))
+
+        for node in self._captures.get("export_spec_name", []):
+            text = self._get_text(node)
+            if (
+                text in NEXTJS_IMPORTED_CONVENTION_EXPORTS
+                and "next" in self.detected_frameworks
+            ) or is_nextjs_convention_export(text, self._file_path):
+                self._mark_definition_by_name(text)
+
+    def _scan_react_patterns(self) -> None:
+        if (
+            "react" not in self.detected_frameworks
+            and "next" not in self.detected_frameworks
+        ):
+            return
+
+        for node in self._captures.get("var_name", []):
+            var_decl = node.parent
+            if not var_decl:
+                continue
+            value = var_decl.child_by_field_name("value")
+            if not value or value.type != "call_expression":
+                continue
+            func = value.child_by_field_name("function")
+            if not func:
+                continue
+
+            func_name = None
+            if func.type == "identifier":
+                func_name = self._get_text(func)
+            elif func.type == "member_expression":
+                prop = func.child_by_field_name("property")
+                if prop:
+                    func_name = self._get_text(prop)
+
+            if func_name in _REACT_WRAPPERS:
+                self.framework_decorated_lines.add(self._line_of(node))
+
+    def _scan_custom_hooks(self) -> None:
+        if (
+            "react" not in self.detected_frameworks
+            and "next" not in self.detected_frameworks
+        ):
+            return
+
+        for node in self._captures.get("export_func_name", []):
+            if self._get_text(node).startswith("use") and len(self._get_text(node)) > 3:
+                self.framework_decorated_lines.add(self._line_of(node))
+
+        for node in self._captures.get("export_var_name", []):
+            if self._get_text(node).startswith("use") and len(self._get_text(node)) > 3:
+                self.framework_decorated_lines.add(self._line_of(node))
