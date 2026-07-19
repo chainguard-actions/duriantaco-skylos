@@ -42,5 +42,5 @@ jobs:
 
       - name: Scan and upload
         env:
-          GIT_SHA: ${{ github.sha }}
-        run: skylos . --danger --quality --secrets --upload --force --sha "$GIT_SHA"
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+        run: skylos . --danger --quality --secrets --upload --force --sha "$GITHUB_SHA_VALUE"

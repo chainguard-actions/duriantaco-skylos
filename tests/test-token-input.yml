@@ -13,18 +13,27 @@ jobs:
           path: "."
           mode: "scan"
           analysis: "dead-code"
-          confidence: "60"
-          token: "dummy-token-for-coverage"
+          confidence: "80"
+          token: "test-token-value"
 
       - name: Assert findings-count output is set
         env:
           FINDINGS: ${{ steps.action.outputs.findings-count }}
-          REPORT: ${{ steps.action.outputs.report-path }}
         run: |
           echo "findings-count: $FINDINGS"
-          echo "report-path: $REPORT"
           if [ -z "$FINDINGS" ]; then
-            echo "FAIL: findings-count output is empty"
+            echo "FAIL: findings-count output was not set"
             exit 1
           fi
-          echo "PASS: token input accepted and scan completed with findings-count=$FINDINGS"
+          echo "PASS: findings-count output is set to '$FINDINGS'"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output was not set"
+            exit 1
+          fi
+          echo "PASS: report-path output is set to '$REPORT'"
