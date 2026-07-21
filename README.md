@@ -9,6 +9,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | Version | Tag | Upstream commit |
 |---------|-----|-----------------|
 | v4.23.0 | [`v4.23.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.23.0) | [`4f8947c`](https://github.com/duriantaco/skylos/commit/4f8947c5f284af205e972fffdee62718a7fac701) |
+| v4.24.1 | [`v4.24.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.24.1) | [`0823fd2`](https://github.com/duriantaco/skylos/commit/0823fd22093dbf3c82383ef2878e7ec14f9be3d6) |
 | v4.24.2 | [`v4.24.2`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.24.2) | [`20fba7b`](https://github.com/duriantaco/skylos/commit/20fba7b723040b517b0163629e08d643db1faf65) |
 | v4.26.1 | [`v4.26.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.26.1) | [`f3b9cf8`](https://github.com/duriantaco/skylos/commit/f3b9cf89ff4a1e30d6964e381167db227eab6622) |
 | v4.27.0 | [`v4.27.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.27.0) | [`cd4f952`](https://github.com/duriantaco/skylos/commit/cd4f9523ebbd78ab6aa5acfe4060bcda4ccbbef7) |
