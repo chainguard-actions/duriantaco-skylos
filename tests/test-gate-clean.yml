@@ -1,0 +1,78 @@
+name: Test gate mode with clean code
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create clean Python file with no dead code
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/clean-python"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/clean-python/clean.py" << 'EOF'
+          def greet(name: str) -> str:
+              return f"Hello, {name}!"
+
+          def main():
+              message = greet("World")
+              print(message)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean-python
+          mode: gate
+          analysis: dead-code
+          confidence: "80"
+          python-version: "3.11"
+        continue-on-error: true
+
+      - name: Assert gate-passed output is set
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: $GATE_PASSED"
+          if [ -z "$GATE_PASSED" ]; then
+            echo "FAIL: gate-passed output is empty"
+            exit 1
+          fi
+          if [ "$GATE_PASSED" != "true" ] && [ "$GATE_PASSED" != "false" ]; then
+            echo "FAIL: gate-passed must be 'true' or 'false', got: '$GATE_PASSED'"
+            exit 1
+          fi
+          echo "PASS: gate-passed=$GATE_PASSED is a valid boolean string"
+
+      - name: Assert findings-count output is a number
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$COUNT is a valid number"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking report at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at $REPORT_PATH"
+            exit 1
+          fi
+          python3 -c "
+          import json
+          data = json.load(open('$REPORT_PATH'))
+          print('Report keys:', list(data.keys()))
+          count = sum(len(v) for v in data.values() if isinstance(v, list))
+          print('Total findings in report:', count)
+          "
+          echo "PASS: report file is valid JSON"

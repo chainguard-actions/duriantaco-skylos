@@ -1,0 +1,80 @@
+name: Test multiple analysis types
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file for multi-analysis
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/multi-analysis"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/multi-analysis/app.py" << 'EOF'
+          import os
+
+          def active_function():
+              secret = "my-hardcoded-password-123"
+              return secret
+
+          def dead_function():
+              return "never called"
+
+          def main():
+              val = active_function()
+              print(val)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/multi-analysis
+          mode: scan
+          analysis: dead-code security
+          confidence: "50"
+          python-version: "3.11"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$COUNT"
+
+      - name: Assert report-path is set
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT_PATH"
+
+      - name: Assert report file is valid JSON with expected structure
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating report structure at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at $REPORT_PATH"
+            exit 1
+          fi
+          python3 -c "
+          import json, sys
+          data = json.load(open('$REPORT_PATH'))
+          print('Report type:', type(data).__name__)
+          print('Report keys:', list(data.keys()) if isinstance(data, dict) else 'N/A (list)')
+          count = sum(len(v) for v in data.values() if isinstance(v, list)) if isinstance(data, dict) else len(data)
+          print('Total findings:', count)
+          "
+          echo "PASS: report is valid JSON"

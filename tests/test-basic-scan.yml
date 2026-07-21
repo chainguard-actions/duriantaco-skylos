@@ -1,0 +1,66 @@
+name: Test basic scan mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create sample Python file with dead code
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/sample-python"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/sample-python/example.py" << 'EOF'
+          def used_function():
+              return 42
+
+          def unused_function():
+              return "I am never called"
+
+          result = used_function()
+          print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/sample-python
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+          python-version: "3.11"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path is set to $REPORT_PATH"
+
+      - name: Assert findings-count output is a number
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$COUNT is a valid number"
+
+      - name: Assert report file exists
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at $REPORT_PATH"
+            exit 1
+          fi
+          echo "PASS: report file exists"
+          cat "$REPORT_PATH"
