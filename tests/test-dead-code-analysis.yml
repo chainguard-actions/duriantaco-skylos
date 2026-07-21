@@ -1,0 +1,79 @@
+name: Test dead-code analysis
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file with dead code
+        run: |
+          mkdir -p /tmp/deadcode-target
+          cat > /tmp/deadcode-target/module.py << 'EOF'
+          def used_function():
+              return 42
+
+          def never_called():
+              """This function is never called anywhere."""
+              return "dead code"
+
+          class UnusedClass:
+              def method(self):
+                  pass
+
+          result = used_function()
+          print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: /tmp/deadcode-target
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS_COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS_COUNT"
+          if [ -z "$FINDINGS_COUNT" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count is set to '$FINDINGS_COUNT'"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path is set to '$REPORT_PATH'"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at $REPORT_PATH"
+            exit 1
+          fi
+          python3 -c "
+          import json
+          data = json.load(open('$REPORT_PATH'))
+          print('Keys:', list(data.keys()))
+          count = sum(len(v) for v in data.values() if isinstance(v, list))
+          print('Total findings:', count)
+          " || {
+            echo "FAIL: report is not valid JSON"
+            exit 1
+          }
+          echo "PASS: report file exists and is valid JSON"
