@@ -1,0 +1,57 @@
+name: Test Skylos with custom options
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: ${{ github.workspace }}/pristine/duriantaco--skylos/v4.22.1/tests/fixtures
+          mode: scan
+          analysis: security
+          confidence: "80"
+          python-version: "3.11"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT_PATH"
+
+      - name: Assert findings-count output is a number
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$COUNT"
+
+      - name: Assert report file is valid JSON with expected structure
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking JSON structure in: $REPORT_PATH"
+          python3 -c "
+          import json, sys
+          data = json.load(open('$REPORT_PATH'))
+          if not isinstance(data, dict):
+              print('FAIL: report is not a JSON object')
+              sys.exit(1)
+          print('PASS: report is a valid JSON object with keys:', list(data.keys()))
+          "

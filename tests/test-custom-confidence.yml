@@ -1,0 +1,84 @@
+name: Test custom confidence threshold
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file with dead code
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/dead-code-python"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/dead-code-python/app.py" << 'EOF'
+          def used_function(x):
+              return x * 2
+
+          def never_called_a():
+              """This function is never called."""
+              return 42
+
+          def never_called_b():
+              """This function is also never called."""
+              return "unused"
+
+          class MyClass:
+              def active_method(self):
+                  return used_function(10)
+
+              def dead_method(self):
+                  return never_called_a()
+
+          if __name__ == "__main__":
+              obj = MyClass()
+              print(obj.active_method())
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/dead-code-python
+          mode: scan
+          analysis: dead-code
+          confidence: "90"
+
+      - name: Assert findings-count is set and numeric
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output was not set"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output was not set"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT"
+
+      - name: Assert report file exists and is valid JSON
+        run: |
+          REPORT="skylos-report.json"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at $REPORT"
+            exit 1
+          fi
+          python3 -c "
+          import json, sys
+          with open('$REPORT') as f:
+              data = json.load(f)
+          print('PASS: valid JSON with keys:', list(data.keys()))
+          "

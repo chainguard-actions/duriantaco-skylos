@@ -1,0 +1,74 @@
+name: Test security analysis mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file with security issues
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/security-python"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/security-python/insecure.py" << 'EOF'
+          import subprocess
+          import os
+
+          # Hardcoded credentials (security issue)
+          PASSWORD = "super_secret_password_123"
+          API_KEY = "sk-1234567890abcdef"
+
+          def run_command(user_input):
+              # Shell injection vulnerability
+              result = subprocess.run(user_input, shell=True, capture_output=True)
+              return result.stdout
+
+          def get_data():
+              return PASSWORD
+
+          if __name__ == "__main__":
+              print(get_data())
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/security-python
+          mode: scan
+          analysis: security
+          confidence: "50"
+
+      - name: Assert findings-count output is set and numeric
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output was not set"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report file is valid JSON with expected structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking report: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at $REPORT"
+            exit 1
+          fi
+          python3 - << 'PYEOF'
+          import json, sys
+          with open("skylos-report.json") as f:
+              data = json.load(f)
+          if not isinstance(data, dict):
+              print("FAIL: report is not a JSON object")
+              sys.exit(1)
+          print(f"PASS: report has keys: {list(data.keys())}")
+          PYEOF

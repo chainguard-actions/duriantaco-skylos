@@ -1,0 +1,42 @@
+name: Test Skylos gate mode passes on clean code
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: ${{ github.workspace }}/pristine/duriantaco--skylos/v4.22.1/tests/fixtures
+          mode: gate
+          analysis: dead-code security
+          confidence: "60"
+
+      - name: Assert gate-passed is true
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: $GATE_PASSED"
+          if [ "$GATE_PASSED" != "true" ]; then
+            echo "FAIL: expected gate-passed=true but got '$GATE_PASSED'"
+            exit 1
+          fi
+          echo "PASS: gate-passed=true"
+
+      - name: Assert findings-count output is a number
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$COUNT"

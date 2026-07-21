@@ -1,0 +1,300 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.FindingsStore = void 0;
+const vscode = require("vscode");
+const provenanceCore_1 = require("./provenanceCore");
+const reviewCore_1 = require("./reviewCore");
+class FindingsStore {
+    constructor() {
+        this.workspaceCliFindingsByFile = new Map();
+        this.focusedCliFindingsByFile = new Map();
+        this.agentFindingsByFile = new Map();
+        this.aiFindingsByFile = new Map();
+        this._circularDeps = [];
+        this._depVulns = [];
+        this._deltaMode = false;
+        this._filter = {};
+        this._onDidChange = new vscode.EventEmitter();
+        this.onDidChange = this._onDidChange.event;
+        this._onDidChangeAI = new vscode.EventEmitter();
+        this.onDidChangeAI = this._onDidChangeAI.event;
+    }
+    setWorkspaceCLIFindings(findings) {
+        this.workspaceCliFindingsByFile.clear();
+        this.focusedCliFindingsByFile.clear();
+        for (const f of findings) {
+            const list = this.workspaceCliFindingsByFile.get(f.file) ?? [];
+            list.push(f);
+            this.workspaceCliFindingsByFile.set(f.file, list);
+        }
+        this._onDidChange.fire();
+    }
+    setFocusedCLIFindings(filePath, findings) {
+        this.focusedCliFindingsByFile.set(filePath, findings);
+        this._onDidChange.fire();
+    }
+    setAgentFindings(findings) {
+        this.agentFindingsByFile.clear();
+        for (const f of findings) {
+            const list = this.agentFindingsByFile.get(f.file) ?? [];
+            list.push(f);
+            this.agentFindingsByFile.set(f.file, list);
+        }
+        this._onDidChange.fire();
+    }
+    setEngineMetadata(grade, summary, circularDeps, depVulns) {
+        this._grade = grade;
+        this._summary = summary;
+        this._circularDeps = circularDeps ?? [];
+        this._depVulns = depVulns ?? [];
+        this._onDidChange.fire();
+    }
+    setLastScan(metadata) {
+        this._lastScan = metadata;
+        this._lastError = undefined;
+        this._onDidChange.fire();
+    }
+    setLastError(error) {
+        this._lastError = error;
+        this._onDidChange.fire();
+    }
+    get grade() { return this._grade; }
+    get summary() { return this._summary; }
+    get circularDeps() { return this._circularDeps; }
+    get depVulns() { return this._depVulns; }
+    get lastScan() { return this._lastScan; }
+    get lastError() { return this._lastError; }
+    get deltaMode() { return this._deltaMode; }
+    set deltaMode(v) { this._deltaMode = v; }
+    get filter() { return this._filter; }
+    set filter(f) {
+        this._filter = f;
+        this._onDidChange.fire();
+        this._onDidChangeAI.fire();
+    }
+    get hasActiveFilter() {
+        return !!(this._filter.severity || this._filter.category || this._filter.source || this._filter.filePattern);
+    }
+    setAIFindings(filePath, findings) {
+        if (findings.length === 0) {
+            this.aiFindingsByFile.delete(filePath);
+        }
+        else {
+            this.aiFindingsByFile.set(filePath, findings);
+        }
+        this._onDidChange.fire();
+        this._onDidChangeAI.fire();
+    }
+    getFindingsForFile(filePath, options) {
+        let findings = this.getQueriedFindings(options).filter((f) => f.file === filePath);
+        findings = sortFindingsInFile(findings);
+        if (options?.max !== undefined) {
+            return findings.slice(0, options.max);
+        }
+        return findings;
+    }
+    getAllRawFindings() {
+        return (0, provenanceCore_1.mergeCorrelatedFindings)([
+            ...this.getCurrentCLIFindings(),
+            ...this.getAgentFindings(),
+            ...this.getAIFindings(),
+        ]);
+    }
+    getAllFindings() {
+        return this.getFindingsByScope("working");
+    }
+    getVisibleFindings(maxTotal, options) {
+        const findings = sortFindingsForDisplay(this.getQueriedFindings(options));
+        return limitFindings(findings, maxTotal, options?.maxPerFile);
+    }
+    getVisibleSummary(maxTotal, options) {
+        const working = this.getQueriedFindings(options);
+        const visible = limitFindings(sortFindingsForDisplay(working), maxTotal, options?.maxPerFile);
+        return {
+            rawTotal: this.getAllRawFindings().length,
+            workingTotal: working.length,
+            visibleTotal: visible.length,
+        };
+    }
+    countBySeverity(scope = "working") {
+        const counts = {};
+        for (const f of this.getFindingsByScope(scope)) {
+            counts[f.severity] = (counts[f.severity] ?? 0) + 1;
+        }
+        return counts;
+    }
+    countByCategory(scope = "working") {
+        const counts = {};
+        for (const f of this.getFindingsByScope(scope)) {
+            counts[f.category] = (counts[f.category] ?? 0) + 1;
+        }
+        return counts;
+    }
+    removeFindingAtLine(filePath, line) {
+        const cliMap = this.focusedCliFindingsByFile.has(filePath)
+            ? this.focusedCliFindingsByFile
+            : this.workspaceCliFindingsByFile;
+        const cli = cliMap.get(filePath);
+        if (cli) {
+            const filtered = cli.filter((f) => f.line !== line);
+            if (cliMap === this.focusedCliFindingsByFile) {
+                this.focusedCliFindingsByFile.set(filePath, filtered);
+            }
+            else if (filtered.length === 0) {
+                this.workspaceCliFindingsByFile.delete(filePath);
+            }
+            else {
+                this.workspaceCliFindingsByFile.set(filePath, filtered);
+            }
+        }
+        const ai = this.aiFindingsByFile.get(filePath);
+        if (ai) {
+            const filtered = ai.filter((f) => f.line !== line);
+            if (filtered.length === 0) {
+                this.aiFindingsByFile.delete(filePath);
+            }
+            else {
+                this.aiFindingsByFile.set(filePath, filtered);
+            }
+        }
+        this._onDidChange.fire();
+        this._onDidChangeAI.fire();
+    }
+    dismissAIFinding(filePath, line) {
+        const existing = this.aiFindingsByFile.get(filePath);
+        if (!existing)
+            return;
+        const filtered = existing.filter((f) => f.line !== line);
+        if (filtered.length === 0) {
+            this.aiFindingsByFile.delete(filePath);
+        }
+        else {
+            this.aiFindingsByFile.set(filePath, filtered);
+        }
+        this._onDidChangeAI.fire();
+    }
+    clear() {
+        this.workspaceCliFindingsByFile.clear();
+        this.focusedCliFindingsByFile.clear();
+        this.agentFindingsByFile.clear();
+        this.aiFindingsByFile.clear();
+        this._grade = undefined;
+        this._summary = undefined;
+        this._circularDeps = [];
+        this._depVulns = [];
+        this._lastScan = undefined;
+        this._lastError = undefined;
+        this._onDidChange.fire();
+        this._onDidChangeAI.fire();
+    }
+    dispose() {
+        this._onDidChange.dispose();
+        this._onDidChangeAI.dispose();
+    }
+    refreshViews() {
+        this._onDidChange.fire();
+        this._onDidChangeAI.fire();
+    }
+    getFindingsByScope(scope) {
+        if (scope === "raw") {
+            return this.getAllRawFindings();
+        }
+        return this.getQueriedFindings();
+    }
+    getQueriedFindings(options) {
+        let findings = this.getAllRawFindings();
+        if (options?.source === "confirmed") {
+            findings = findings.filter(provenanceCore_1.isCorroborated);
+        }
+        else if (options?.source) {
+            const source = options.source;
+            findings = findings.filter((f) => (f.sources ?? [f.source]).includes(source));
+        }
+        if (options?.includeDeadCode === false) {
+            findings = findings.filter((f) => f.category !== "dead_code");
+        }
+        return findings.filter((f) => this.matchesFilter(f));
+    }
+    matchesFilter(finding) {
+        const f = this._filter;
+        if (f.severity && finding.severity !== f.severity)
+            return false;
+        if (f.category && finding.category !== f.category)
+            return false;
+        if (f.source && !(0, provenanceCore_1.matchesSourceFilter)(finding, f.source))
+            return false;
+        if (f.filePattern && !finding.file.toLowerCase().includes(f.filePattern.toLowerCase()))
+            return false;
+        return true;
+    }
+    getCurrentCLIFindings() {
+        const files = new Set();
+        for (const file of this.workspaceCliFindingsByFile.keys())
+            files.add(file);
+        for (const file of this.focusedCliFindingsByFile.keys())
+            files.add(file);
+        const all = [];
+        for (const file of files) {
+            all.push(...this.getCurrentCLIFindingsForFile(file));
+        }
+        return all;
+    }
+    getCurrentCLIFindingsForFile(filePath) {
+        if (this.focusedCliFindingsByFile.has(filePath)) {
+            return this.focusedCliFindingsByFile.get(filePath) ?? [];
+        }
+        return this.workspaceCliFindingsByFile.get(filePath) ?? [];
+    }
+    getAIFindings() {
+        const all = [];
+        for (const list of this.aiFindingsByFile.values())
+            all.push(...list);
+        return all;
+    }
+    getAgentFindings() {
+        const all = [];
+        for (const list of this.agentFindingsByFile.values())
+            all.push(...list);
+        return all;
+    }
+}
+exports.FindingsStore = FindingsStore;
+function sortFindingsForDisplay(findings) {
+    const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath;
+    const visibleFiles = new Set(vscode.window.visibleTextEditors.map((editor) => editor.document.uri.fsPath));
+    return [...findings].sort((a, b) => {
+        const scoreDelta = getDisplayScore(b, activeFile, visibleFiles) - getDisplayScore(a, activeFile, visibleFiles);
+        if (scoreDelta !== 0)
+            return scoreDelta;
+        return a.file.localeCompare(b.file) || a.line - b.line || a.message.localeCompare(b.message);
+    });
+}
+function sortFindingsInFile(findings) {
+    return [...findings].sort((a, b) => {
+        const sevDelta = (0, reviewCore_1.severityRank)(b.severity) - (0, reviewCore_1.severityRank)(a.severity);
+        if (sevDelta !== 0)
+            return sevDelta;
+        return a.line - b.line || a.message.localeCompare(b.message);
+    });
+}
+function getDisplayScore(finding, activeFile, visibleFiles) {
+    return (0, reviewCore_1.reviewScore)(finding, { currentFile: activeFile, visibleFiles });
+}
+function limitFindings(findings, maxTotal, maxPerFile) {
+    if (!Number.isFinite(maxTotal) || maxTotal <= 0) {
+        return [];
+    }
+    const results = [];
+    const perFileCounts = new Map();
+    const perFileLimit = maxPerFile ?? Number.MAX_SAFE_INTEGER;
+    for (const finding of findings) {
+        if (results.length >= maxTotal)
+            break;
+        const currentCount = perFileCounts.get(finding.file) ?? 0;
+        if (currentCount >= perFileLimit)
+            continue;
+        perFileCounts.set(finding.file, currentCount + 1);
+        results.push(finding);
+    }
+    return results;
+}

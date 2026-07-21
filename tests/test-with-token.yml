@@ -1,0 +1,40 @@
+name: Test with token input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: "."
+          mode: "scan"
+          analysis: "dead-code security"
+          confidence: "60"
+          token: "test-token-value"
+          python-version: "3.11"
+
+      - name: Assert report-path output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "actual: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected report-path to be set"
+            exit 1
+          fi
+          echo "PASS: report-path is set to $ACTUAL"
+
+      - name: Assert findings-count output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "actual: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected findings-count to be set"
+            exit 1
+          fi
+          echo "PASS: findings-count is $ACTUAL"

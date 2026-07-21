@@ -1,0 +1,158 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skylos"
+version = "4.22.1"
+requires-python = ">=3.10"
+description = "Open-source, local-first static analysis and PR gates for Python, TypeScript/JavaScript, Go, Java, PHP, Rust, Dart, C#, and Shell. Finds dead code, security issues, secrets, quality regressions, and AI-code mistakes."
+authors = [{name = "Aaron Oh", email = "aaronoh2015@gmail.com"}]
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [
+    "static-analysis",
+    "dead-code",
+    "unused-code",
+    "unused-imports",
+    "security",
+    "linter",
+    "code-quality",
+    "sast",
+    "python-sast",
+    "vulnerability-scanner",
+    "python-linter",
+    "python-security",
+    "python-security-scanner",
+    "typescript-linter",
+    "quality-gate",
+    "ci-cd",
+    "github-actions",
+    "github-actions-security",
+    "gitlab-ci",
+    "gitlab-ci-security",
+    "shell-security",
+    "supply-chain-security",
+    "code-review",
+    "secrets-detection",
+    "mcp",
+    "mcp-server",
+    "ai-agent",
+    "ai-tool",
+    "coding-agent",
+    "vulture-alternative",
+    "bandit-alternative",
+    "semgrep-alternative",
+    "code-scanner",
+    "dead-code-detector",
+    "devsecops",
+    "vibe-coding",
+    "ai-generated-code",
+    "ai-code-security",
+    "prompt-injection",
+    "ai-supply-chain-security",
+    "phantom-function",
+    "hallucinated-dependency",
+    "copilot-review",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "inquirer>=3.0.3",
+    "libcst>=1.8.2",
+    "rich>=14.0.0",
+    "textual>=1.0.0",
+    "keyring>=25.6.0,!=3.4.2",
+    "requests",
+    "tree-sitter>=0.25.2",
+    "tree-sitter-typescript>=0.23.2",
+    "tree-sitter-go>=0.23.0",
+    "tree-sitter-java>=0.23.0",
+    "tree-sitter-php>=0.24.1",
+    "tree-sitter-rust>=0.24.2",
+    "tree-sitter-dart-orchard>=0.3.2",
+    "tomli>=2.0.1; python_version < '3.11'",
+    "pyyaml",
+    "networkx",
+    "pyperclip",
+    "ca9>=0.1.0",
+    "mcp>=1.0.0"
+]
+
+[project.urls]
+Homepage = "https://skylos.dev"
+Documentation = "https://docs.skylos.dev"
+Repository = "https://github.com/duriantaco/skylos"
+Changelog = "https://github.com/duriantaco/skylos/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/duriantaco/skylos/issues"
+Discord = "https://discord.gg/Ftn9t9tErf"
+"MCP Server" = "https://github.com/duriantaco/skylos/tree/main/skylos_mcp"
+
+[project.optional-dependencies]
+web = ["flask>=2.1.1", "flask-cors>=3.0.3"]
+llm = ["litellm>=1.81.3,<1.84.0"]
+test = ["pytest>=9.0.2"]
+all = ["flask>=2.1.1", "flask-cors>=3.0.3", "pytest>=9.0.2", "litellm>=1.81.3,<1.84.0"]
+
+[project.scripts]
+skylos = "skylos.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["skylos*"]
+namespaces = false
+[tool.skylos]
+complexity = 10
+nesting = 3
+max_args = 5
+max_lines = 50
+model = "gpt-4.1"
+exclude = []
+ignore = []
+
+[tool.skylos.masking]
+names = []
+decorators = []
+bases = []
+
+[tool.skylos.whitelist]
+names = [
+   ]
+
+[tool.skylos.whitelist.documented]
+
+[tool.skylos.whitelist.temporary]
+
+[tool.skylos.gate]
+fail_on_critical = true
+max_security = 0
+max_quality = 10
+strict = false
+
+[tool.uv.workspace]
+exclude = ["rust"]
+
+[tool.ruff]
+target-version = "py310"
+extend-exclude = ["manual"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+norecursedirs = [
+    "benchmarks",
+    "corpus",
+    "manual",
+]
