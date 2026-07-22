@@ -1,0 +1,90 @@
+name: Test combined dead-code and security analysis
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a Python file with mixed issues
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/combined-python"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/combined-python/mixed.py" << 'EOF'
+          import subprocess
+          import os
+
+          def active_function():
+              """This function is used."""
+              return 42
+
+          def dead_function():
+              """This function is never called."""
+              return "unused"
+
+          def run_cmd(cmd):
+              """Runs a shell command."""
+              return subprocess.run(cmd, shell=True, capture_output=True)
+
+          result = active_function()
+          output = run_cmd("echo hello")
+          print(result, output.stdout)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/combined-python
+          mode: scan
+          analysis: dead-code security
+          confidence: "50"
+
+      - name: Assert findings-count output is a number
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count is a valid number: $COUNT"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path is set to '$REPORT_PATH'"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report file at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at '$REPORT_PATH'"
+            exit 1
+          fi
+          if ! python3 -c "import json; data = json.load(open('$REPORT_PATH')); print('Keys:', list(data.keys()))" 2>&1; then
+            echo "FAIL: report is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: report file exists and is valid JSON"
+
+      - name: Assert gate-passed is not set (scan mode has no gate)
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: '$GATE_PASSED'"
+          # In scan mode, the Quality Gate step is skipped, so gate-passed should be empty
+          if [ "$GATE_PASSED" = "false" ]; then
+            echo "FAIL: gate-passed should not be 'false' in scan mode"
+            exit 1
+          fi
+          echo "PASS: gate-passed is not 'false' in scan mode (value: '$GATE_PASSED')"

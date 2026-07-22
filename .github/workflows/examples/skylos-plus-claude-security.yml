@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -57,11 +57,9 @@ jobs:
       - name: PR Review Comments
         if: github.event_name == 'pull_request' && always()
         env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
           GH_TOKEN: ${{ github.token }}
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          diff_base="origin/${BASE_REF:-main}"
-          skylos cicd review --input skylos-results.json --diff-base "$diff_base"
+        run: skylos cicd review --input skylos-results.json --diff-base "origin/$BASE_REF"
 
       - name: Upload Skylos Results for Cross-Reference
         if: always()
@@ -75,12 +73,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Run Claude Code Security Review
-        uses: anthropics/claude-code-action@58a2944bbcf1a73b1ae7960995fffca4fa29b113 # main
+        uses: anthropics/claude-code-action@fa7e2f0a29a126f0b81cdcf360561b36e44cf608 # main
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           direct_prompt: "/review --output-file claude-security-results.json"
@@ -97,7 +95,7 @@ jobs:
     needs: [skylos, claude-security]
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5

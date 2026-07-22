@@ -55,19 +55,19 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
           EVENT_BEFORE: ${{ github.event.before }}
-          REF_NAME: ${{ github.ref_name }}
+          REF_NAME: ${{ github.ref_name || 'main' }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            safe_base=$(printf '%s' "origin/${BASE_REF:-main}" | tr -d '\n\r')
+            safe_base=$(printf '%s' "origin/$BASE_REF" | tr -d '\n\r')
             echo "base=$safe_base" >> "$GITHUB_OUTPUT"
           elif [ -n "$EVENT_BEFORE" ] && [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
-            safe_before=$(printf '%s' "$EVENT_BEFORE" | tr -d '\n\r')
-            echo "base=$safe_before" >> "$GITHUB_OUTPUT"
+            safe_base=$(printf '%s' "$EVENT_BEFORE" | tr -d '\n\r')
+            echo "base=$safe_base" >> "$GITHUB_OUTPUT"
           else
-            safe_ref=$(printf '%s' "origin/${REF_NAME:-main}" | tr -d '\n\r')
-            echo "base=$safe_ref" >> "$GITHUB_OUTPUT"
+            safe_base=$(printf '%s' "origin/$REF_NAME" | tr -d '\n\r')
+            echo "base=$safe_base" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run Skylos
@@ -77,8 +77,7 @@ jobs:
           DIFF_BASE: ${{ steps.diff.outputs.base }}
         shell: bash
         run: |
-          safe_report=$(printf '%s' "$REPORT" | tr -d '\n\r')
-          echo "REPORT=$safe_report" >> "$GITHUB_OUTPUT"
+          echo "REPORT=$REPORT" >> "$GITHUB_OUTPUT"
           AI_DEFECTS_FLAG=""
           if .venv/bin/skylos --help | grep -q -- "--ai-defects"; then
             AI_DEFECTS_FLAG="--ai-defects"
