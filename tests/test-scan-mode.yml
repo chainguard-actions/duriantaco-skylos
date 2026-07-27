@@ -1,0 +1,76 @@
+name: Test scan mode (report only, no gate)
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Python fixture to scan
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/scan-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/scan-target/sample.py" << 'EOF'
+          def used_function():
+              return 42
+
+          def main():
+              result = used_function()
+              print(result)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/scan-target
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path is set to '$REPORT_PATH'"
+
+      - name: Assert findings-count output is a number
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count is a valid number: $COUNT"
+
+      - name: Assert report file exists
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at '$REPORT_PATH'"
+            exit 1
+          fi
+          echo "PASS: report file exists"
+
+      - name: Assert report file is valid JSON
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating JSON in: $REPORT_PATH"
+          if ! python3 -c "import json; json.load(open('$REPORT_PATH'))" 2>&1; then
+            echo "FAIL: report file is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: report file is valid JSON"

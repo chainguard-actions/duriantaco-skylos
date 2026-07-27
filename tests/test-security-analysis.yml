@@ -1,0 +1,94 @@
+name: Test security analysis mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python fixture with security issues
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/security-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/security-target/insecure.py" << 'EOF'
+          """Module with intentional security issues for testing."""
+          import subprocess
+          import os
+
+
+          def run_command(user_input: str) -> str:
+              """Runs a shell command with user input — potential injection."""
+              result = subprocess.run(
+                  f"echo {user_input}",
+                  shell=True,
+                  capture_output=True,
+                  text=True,
+              )
+              return result.stdout
+
+
+          def get_data(query: str) -> str:
+              """Builds a SQL-like query string unsafely."""
+              return f"SELECT * FROM users WHERE name = '{query}'"
+
+
+          def main() -> None:
+              """Entry point."""
+              output = run_command("hello")
+              print(output)
+              sql = get_data("admin")
+              print(sql)
+
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/security-target
+          mode: scan
+          analysis: security
+          confidence: "50"
+
+      - name: Assert findings-count output is a non-negative integer
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$COUNT"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path='$REPORT_PATH'"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking report at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at '$REPORT_PATH'"
+            exit 1
+          fi
+          python3 -c "
+          import json
+          data = json.load(open('$REPORT_PATH'))
+          print('Report keys:', list(data.keys()))
+          total = sum(len(v) for v in data.values() if isinstance(v, list))
+          print('Total findings:', total)
+          "
+          echo "PASS: report file is valid JSON"

@@ -1,0 +1,80 @@
+name: Test gate mode with clean code (gate should pass)
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a clean Python fixture with no security issues
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/clean-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/clean-target/clean.py" << 'EOF'
+          """A clean Python module with no dead code or security issues."""
+
+
+          def greet(name: str) -> str:
+              """Return a greeting string."""
+              return f"Hello, {name}!"
+
+
+          def add(a: int, b: int) -> int:
+              """Add two integers."""
+              return a + b
+
+
+          def main() -> None:
+              """Entry point."""
+              message = greet("World")
+              print(message)
+              result = add(1, 2)
+              print(result)
+
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean-target
+          mode: gate
+          analysis: dead-code security
+          confidence: "80"
+
+      - name: Assert gate-passed is true
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: $GATE_PASSED"
+          if [ "$GATE_PASSED" != "true" ]; then
+            echo "FAIL: expected gate-passed=true but got '$GATE_PASSED'"
+            exit 1
+          fi
+          echo "PASS: gate-passed is true"
+
+      - name: Assert findings-count is a number
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$COUNT"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at '$REPORT_PATH'"
+            exit 1
+          fi
+          python3 -c "import json; data=json.load(open('$REPORT_PATH')); print('JSON keys:', list(data.keys()))"
+          echo "PASS: report file exists and is valid JSON"
