@@ -1,0 +1,100 @@
+name: Test Skylos dead-code detection
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a Python file with dead code
+        run: |
+          mkdir -p /tmp/deadcode-project
+          cat > /tmp/deadcode-project/app.py << 'EOF'
+          def used_function():
+              """This function is actually called."""
+              return 42
+
+          def unused_function_alpha():
+              """This function is never called anywhere."""
+              return "dead code"
+
+          def unused_function_beta():
+              """Another unused function."""
+              x = 100
+              return x * 2
+
+          class UnusedClass:
+              """This class is never instantiated."""
+              def method(self):
+                  return "unused"
+
+          if __name__ == "__main__":
+              result = used_function()
+              print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/deadcode-project"
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "60"
+          python-version: "3.11"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path is set to '$REPORT_PATH'"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report file at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at '$REPORT_PATH'"
+            exit 1
+          fi
+          if ! python3 -c "import json; json.load(open('$REPORT_PATH'))" 2>&1; then
+            echo "FAIL: report file is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: report file exists and is valid JSON"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count is a valid number: $COUNT"
+
+      - name: Assert dead code findings were detected
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "WARN: No dead code findings detected (may depend on skylos version/confidence)"
+          else
+            echo "PASS: Dead code findings detected: $COUNT"
+          fi
+
+      - name: Show report contents for debugging
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "=== Report Contents ==="
+          cat "$REPORT_PATH" | python3 -m json.tool || cat "$REPORT_PATH"

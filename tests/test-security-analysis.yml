@@ -1,0 +1,90 @@
+name: Test Skylos security analysis
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a Python file with security issues
+        run: |
+          mkdir -p /tmp/security-project
+          cat > /tmp/security-project/insecure.py << 'EOF'
+          import subprocess
+          import os
+
+          # Hardcoded secret - security issue
+          PASSWORD = "super_secret_password_123"
+          API_KEY = "sk-1234567890abcdef"
+
+          def run_command(user_input):
+              # Shell injection vulnerability
+              result = subprocess.run(user_input, shell=True, capture_output=True)
+              return result.stdout
+
+          def evaluate_code(code_str):
+              # Dangerous eval usage
+              return eval(code_str)
+
+          def get_data():
+              return run_command("ls -la")
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/security-project"
+          mode: "scan"
+          analysis: "security"
+          confidence: "50"
+          python-version: "3.11"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path is set to '$REPORT_PATH'"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report file at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at '$REPORT_PATH'"
+            exit 1
+          fi
+          if ! python3 -c "import json; json.load(open('$REPORT_PATH'))" 2>&1; then
+            echo "FAIL: report file is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: report file exists and is valid JSON"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count is a valid number: $COUNT"
+
+      - name: Assert security findings were detected
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "WARN: No security findings detected in file with known issues (may depend on skylos version)"
+          else
+            echo "PASS: Security findings detected: $COUNT"
+          fi

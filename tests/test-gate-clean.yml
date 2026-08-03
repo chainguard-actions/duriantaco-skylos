@@ -1,0 +1,64 @@
+name: Test Skylos gate mode with clean code
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a clean Python file with no issues
+        run: |
+          mkdir -p /tmp/clean-project
+          cat > /tmp/clean-project/main.py << 'EOF'
+          def greet(name: str) -> str:
+              """Return a greeting message."""
+              return f"Hello, {name}!"
+
+          if __name__ == "__main__":
+              print(greet("World"))
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/clean-project"
+          mode: "gate"
+          analysis: "dead-code security"
+          confidence: "90"
+          python-version: "3.11"
+        continue-on-error: true
+
+      - name: Assert gate-passed output is set
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: $GATE_PASSED"
+          if [ -z "$GATE_PASSED" ]; then
+            echo "FAIL: gate-passed output is empty"
+            exit 1
+          fi
+          echo "PASS: gate-passed is set to '$GATE_PASSED'"
+
+      - name: Assert findings-count output is a number
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count is a valid number: $COUNT"
+
+      - name: Assert report file exists
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report file at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file not found at '$REPORT_PATH'"
+            exit 1
+          fi
+          echo "PASS: report file exists"
