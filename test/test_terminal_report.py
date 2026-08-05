@@ -1,0 +1,276 @@
+from rich.console import Console
+
+from skylos.ui.terminal_report import collect_pretty_findings, render_pretty_results
+
+
+def _recording_console() -> Console:
+    return Console(record=True, width=120, force_terminal=False)
+
+
+def test_pretty_renderer_groups_findings_by_file_and_keeps_copyable_locations(tmp_path):
+    source = tmp_path / "src" / "app.py"
+    source.parent.mkdir()
+    source.write_text(
+        "def handler(user_id):\n"
+        "    cursor.execute(f'SELECT * FROM users WHERE id={user_id}')\n",
+        encoding="utf-8",
+    )
+    result = {
+        "analysis_summary": {"total_files": 1},
+        "danger": [
+            {
+                "rule_id": "SKY-D211",
+                "severity": "HIGH",
+                "message": "SQL injection risk",
+                "file": str(source),
+                "line": 2,
+            }
+        ],
+    }
+
+    console = _recording_console()
+    render_pretty_results(console, result, root_path=tmp_path)
+    output = console.export_text()
+
+    assert "Skylos static analysis" in output
+    assert "src/app.py · 1 issue" in output
+    assert " HIGH  SKY-D211  SQL injection risk" in output
+    assert "src/app.py:2" in output
+    assert "cursor.execute" in output
+    assert "╭" not in output
+
+
+def test_pretty_renderer_uses_secret_preview_instead_of_source_line(tmp_path):
+    source = tmp_path / ".env"
+    source.write_text("API_KEY=sk_live_real_secret_value\n", encoding="utf-8")
+    result = {
+        "analysis_summary": {"total_files": 1},
+        "secrets": [
+            {
+                "provider": "stripe",
+                "message": "Stripe key found",
+                "preview": "sk_live_****",
+                "file": str(source),
+                "line": 1,
+            }
+        ],
+    }
+
+    console = _recording_console()
+    render_pretty_results(console, result, root_path=tmp_path)
+    output = console.export_text()
+
+    assert "sk_live_****" in output
+    assert "sk_live_real_secret_value" not in output
+
+
+def test_pretty_renderer_labels_reliability_separately_from_security(tmp_path):
+    manifest = tmp_path / "deploy.yml"
+    manifest.write_text("command: [uvicorn, app:app, --reload]\n", encoding="utf-8")
+    result = {
+        "analysis_summary": {"total_files": 1},
+        "danger": [],
+        "reliability": [
+            {
+                "rule_id": "SKY-DEP003",
+                "severity": "MEDIUM",
+                "message": "Reload mode is externally reachable",
+                "file": str(manifest),
+                "line": 1,
+            }
+        ],
+    }
+
+    console = _recording_console()
+    render_pretty_results(console, result, root_path=tmp_path)
+    output = console.export_text()
+
+    assert "Reliability" in output
+    assert "SKY-DEP003" in output
+    assert "Security" not in output
+
+
+def test_pretty_renderer_prints_classification_and_evidence_source(tmp_path):
+    source = tmp_path / "src" / "app.py"
+    result = {
+        "analysis_summary": {"total_files": 1},
+        "unused_functions": [
+            {
+                "name": "old_helper",
+                "file": str(source),
+                "line": 1,
+                "dead_code_classification": "likely_dead",
+                "dead_code_evidence": [
+                    {
+                        "kind": "no_static_references",
+                        "role": "supports_dead",
+                        "reason": "no static references were found",
+                        "source": "analyzer",
+                        "confidence": 1.0,
+                        "details": {"references": 0},
+                    }
+                ],
+            }
+        ],
+    }
+
+    console = _recording_console()
+    render_pretty_results(console, result, root_path=tmp_path)
+    output = console.export_text()
+
+    assert "Unused function: old_helper" in output
+    assert (
+        "evidence: likely dead — no static references were found [analyzer]" in output
+    )
+
+
+def test_pretty_renderer_shows_rescued_and_abstained_counts():
+    result = {
+        "analysis_summary": {
+            "total_files": 1,
+            "dead_code_evidence": {
+                "candidate_decisions": {
+                    "reported": 0,
+                    "rescued": 2,
+                    "abstained": 1,
+                }
+            },
+        }
+    }
+
+    console = _recording_console()
+    render_pretty_results(console, result)
+    output = console.export_text()
+
+    assert "dead-code rescued: 2" in output
+    assert "dead-code abstained: 1" in output
+
+
+def test_pretty_renderer_shows_incomplete_analysis_as_an_error(tmp_path):
+    result = {
+        "analysis_summary": {"total_files": 1, "analysis_error_count": 1},
+        "analysis_errors": [
+            {
+                "rule_id": "SKY-ANALYSIS-INCOMPLETE",
+                "severity": "HIGH",
+                "message": "invalid syntax",
+                "file": str(tmp_path / "future.py"),
+                "line": 1,
+            }
+        ],
+    }
+
+    console = _recording_console()
+    render_pretty_results(console, result, root_path=tmp_path)
+    output = console.export_text()
+
+    assert "analysis errors: 1" in output
+    assert "SKY-ANALYSIS-INCOMPLETE" in output
+    assert "invalid syntax" in output
+    assert "No findings to display" not in output
+
+
+def test_pretty_renderer_sanitizes_control_chars_from_finding_fields(tmp_path):
+    source = tmp_path / "src" / "app.py"
+    source.parent.mkdir()
+    source.write_text("def handler():\n    return None\n", encoding="utf-8")
+    result = {
+        "analysis_summary": {"total_files": 1},
+        "danger": [
+            {
+                "rule_id": "SKY-D999",
+                "severity": "HIGH",
+                "message": "bad\x1b[2Jtitle",
+                "snippet": "payload\x1b]52;c;AAAA\x07tail",
+                "file": str(source),
+                "line": 2,
+            }
+        ],
+    }
+
+    console = _recording_console()
+    render_pretty_results(console, result, root_path=tmp_path)
+    output = console.export_text()
+
+    assert "\x1b" not in output
+    assert "\x07" not in output
+    assert "bad\\x1b[2Jtitle" in output
+    assert "payload\\x1b]52;c;AAAA\\x07tail" in output
+
+
+def test_pretty_renderer_sanitizes_control_chars_from_source_line(tmp_path):
+    source = tmp_path / "src" / "app.py"
+    source.parent.mkdir()
+    source.write_text("def handler():\n    eval(user)\x1b[2J\n", encoding="utf-8")
+    result = {
+        "analysis_summary": {"total_files": 1},
+        "danger": [
+            {
+                "rule_id": "SKY-D200",
+                "severity": "HIGH",
+                "message": "Dangerous call",
+                "file": str(source),
+                "line": 2,
+            }
+        ],
+    }
+
+    console = _recording_console()
+    render_pretty_results(console, result, root_path=tmp_path)
+    output = console.export_text()
+
+    assert "\x1b" not in output
+    assert "eval(user)\\x1b[2J" in output
+
+
+def test_collect_pretty_findings_applies_per_category_limit(tmp_path):
+    result = {
+        "unused_functions": [
+            {"name": "old_a", "file": "a.py", "line": 1},
+            {"name": "old_b", "file": "b.py", "line": 2},
+        ],
+        "quality": [
+            {"message": "too complex", "file": "c.py", "line": 3},
+            {"message": "too nested", "file": "d.py", "line": 4},
+        ],
+    }
+
+    findings = collect_pretty_findings(result, root_path=tmp_path, limit=1)
+
+    assert [finding.title for finding in findings] == [
+        "too complex",
+        "Unused function: old_a",
+    ]
+
+
+def test_pretty_renderer_prints_directory_rollups(tmp_path):
+    result = {
+        "analysis_summary": {
+            "total_files": 2,
+            "by_directory": [
+                {
+                    "path": "src/api",
+                    "total": 3,
+                    "files": 2,
+                    "quality": 1,
+                    "dead_code": 2,
+                }
+            ],
+        },
+        "quality": [
+            {
+                "rule_id": "SKY-C304",
+                "severity": "MEDIUM",
+                "message": "Function too long",
+                "file": str(tmp_path / "src" / "api" / "views.py"),
+                "line": 1,
+            }
+        ],
+    }
+
+    console = _recording_console()
+    render_pretty_results(console, result, root_path=tmp_path)
+    output = console.export_text()
+
+    assert "Hot directories" in output
+    assert "src/api · 3 issues · 2 files · dead: 2, quality: 1" in output

@@ -1,0 +1,129 @@
+name: Tests + Coverage
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test_matrix:
+    name: test-matrix (${{ matrix.install_target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        install_target:
+          - "."
+          - ".[llm]"
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.22"
+
+      - uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4
+
+      - name: Check lockfile
+        run: uv lock --check
+
+      - name: Build repo Go engine
+        run: |
+          mkdir -p /tmp/skylos-go-build /tmp/skylos-go-gopath
+          cd skylos/engines/go
+          GOCACHE=/tmp/skylos-go-build GOPATH=/tmp/skylos-go-gopath go build -o skylos-go ./cmd/skylos-go
+
+      - name: Create venv + install deps
+        env:
+          INSTALL_TARGET: ${{ matrix.install_target }}
+        run: |
+          uv venv
+          uv pip install --python .venv/bin/python -e "$INSTALL_TARGET"
+          uv pip install --python .venv/bin/python pytest pytest-cov
+
+      - name: Run tests with coverage
+        run: |
+          .venv/bin/python -m pytest -q --cov=skylos --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          flags: ${{ matrix.install_target == '.[llm]' && 'llm-extra' || 'default-install' }}
+
+  docker_smoke:
+    name: docker-smoke (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: docker build --build-arg "PYTHON_VERSION=$PYTHON_VERSION" -t skylos:test .
+
+      - name: Check CLI version
+        run: docker run --rm skylos:test --version
+
+      - name: Check Python runtime
+        shell: bash
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: |
+          actual="$(docker run --rm --entrypoint python skylos:test -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+          test "$actual" = "$PYTHON_VERSION"
+
+      - name: Run fixture scan
+        run: |
+          docker run --rm \
+            -v "$PWD/benchmarks/quality/fixtures/argument_overload:/work" \
+            -w /work \
+            skylos:test \
+            . --json --no-provenance > /tmp/skylos-docker-smoke.json
+          grep -q '"unused_functions"' /tmp/skylos-docker-smoke.json
+
+      - name: Scan current Python syntax
+        if: matrix.python-version == '3.14'
+        run: |
+          mkdir -p /tmp/skylos-python-syntax
+          printf 'type CacheEntry[T = str] = dict[str, T]\n\ndef stale_helper():\n    return CacheEntry()\n' > /tmp/skylos-python-syntax/example.py
+          docker run --rm \
+            -v "/tmp/skylos-python-syntax:/work" \
+            -w /work \
+            skylos:test \
+            . --json --no-provenance > /tmp/skylos-python-syntax.json
+          grep -q '"stale_helper"' /tmp/skylos-python-syntax.json
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    needs: [test_matrix, docker_smoke]
+    if: ${{ always() }}
+
+    steps:
+      - name: Require matrix success
+        env:
+          TEST_MATRIX_RESULT: ${{ needs.test_matrix.result }}
+          DOCKER_SMOKE_RESULT: ${{ needs.docker_smoke.result }}
+        run: |
+          if [ "$TEST_MATRIX_RESULT" != "success" ] || [ "$DOCKER_SMOKE_RESULT" != "success" ]; then
+            echo "test_matrix result: $TEST_MATRIX_RESULT"
+            echo "docker_smoke result: $DOCKER_SMOKE_RESULT"
+            exit 1
+          fi

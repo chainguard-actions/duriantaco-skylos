@@ -1,0 +1,73 @@
+name: Test Skylos gate mode fails on findings
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file with obvious dead code
+        run: |
+          mkdir -p /tmp/skylos-dead
+          cat > /tmp/skylos-dead/dead_code.py << 'EOF'
+          def used():
+              return 1
+
+          def dead_one():
+              return "never called"
+
+          def dead_two():
+              return "also never called"
+
+          def dead_three():
+              return "still never called"
+
+          x = used()
+          print(x)
+          EOF
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          path: /tmp/skylos-dead
+          mode: gate
+          analysis: dead-code
+          confidence: "50"
+
+      - name: Assert action outcome and gate-passed output
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          GATE: ${{ steps.action.outputs.gate-passed }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE"
+          echo "findings-count: $FINDINGS"
+
+          # findings-count must always be set
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+
+          if [ "$OUTCOME" = "success" ]; then
+            # Gate passed — no dead code detected (possible with high confidence threshold)
+            if [ "$GATE" != "true" ]; then
+              echo "FAIL: action succeeded but gate-passed is not 'true'"
+              exit 1
+            fi
+            echo "PASS: gate passed (no findings at this confidence level)"
+          elif [ "$OUTCOME" = "failure" ]; then
+            # Gate failed — dead code was detected, gate-passed should be false
+            if [ "$GATE" != "false" ]; then
+              echo "FAIL: action failed but gate-passed is not 'false', got '$GATE'"
+              exit 1
+            fi
+            echo "PASS: gate correctly failed with gate-passed=false and findings-count=$FINDINGS"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

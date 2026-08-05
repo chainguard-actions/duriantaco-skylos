@@ -1,0 +1,78 @@
+name: Test Skylos scan mode (report only)
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create sample Python file to scan
+        run: |
+          mkdir -p /tmp/skylos-test-scan
+          cat > /tmp/skylos-test-scan/sample.py << 'EOF'
+          def used_function():
+              return 42
+
+          def unused_function():
+              return "I am never called"
+
+          result = used_function()
+          print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: /tmp/skylos-test-scan
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count is '$FINDINGS'"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path is '$REPORT'"
+
+      - name: Assert report file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report file: $REPORT"
+          # The report is written to the workspace root as skylos-report.json
+          if [ ! -f "$REPORT" ] && [ ! -f "skylos-report.json" ]; then
+            echo "FAIL: report file not found at '$REPORT' or skylos-report.json"
+            exit 1
+          fi
+          echo "PASS: report file exists"
+
+      - name: Assert scan mode does not set gate-passed (gate step skipped)
+        env:
+          GATE: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: '$GATE'"
+          # In scan mode, the Quality Gate step is skipped (if condition not met),
+          # so gate-passed should be empty
+          if [ "$GATE" = "false" ]; then
+            echo "FAIL: gate-passed should not be 'false' in scan mode (gate step should be skipped)"
+            exit 1
+          fi
+          echo "PASS: gate-passed is '$GATE' (empty or not false in scan mode)"

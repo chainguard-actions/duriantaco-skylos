@@ -1,0 +1,457 @@
+from __future__ import annotations
+import re, ast
+from math import log2
+
+__all__ = ["scan_ctx"]
+
+CLIENT_PATHS = (
+    "/static/",
+    "/public/",
+    "/frontend/",
+    "/client/",
+    "/dist/",
+    "/build/",
+    "/assets/",
+    "/.next/",
+    "/out/",
+)
+
+CLIENT_ENV_RE = re.compile(
+    r"process\.env\."
+    r"(?!NEXT_PUBLIC_|REACT_APP_|VITE_|NUXT_PUBLIC_|EXPO_PUBLIC_)"
+    r"[A-Z_]*(SECRET|KEY|PASSWORD|TOKEN|PRIVATE|CREDENTIAL|AUTH)[A-Z_]*"
+)
+
+JS_TS_SUFFIXES = (".js", ".jsx", ".ts", ".tsx")
+
+ALLOWED_FILE_SUFFIXES = (
+    ".py",
+    ".pyi",
+    ".pyw",
+    ".env",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".go",
+    ".php",
+    ".rs",
+    ".dart",
+    ".kt",
+    ".kts",
+)
+
+PROVIDER_PATTERNS = [
+    ("github", re.compile(r"(ghp|gho|ghu|ghs|ghr|gpat)_[A-Za-z0-9]{36,}")),
+    ("gitlab", re.compile(r"glpat-[A-Za-z0-9_-]{20,}")),
+    ("slack", re.compile(r"xox[abprs]-[A-Za-z0-9-]{10,48}")),
+    ("stripe", re.compile(r"sk_(live|test)_[A-Za-z0-9]{16,}")),
+    (
+        "aws_access_key_id",
+        re.compile(r"\b(AKIA|ASIA|AGPA|AIDA|AROA|AIPA)[0-9A-Z]{16}\b"),
+    ),
+    ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z\-_]{35}\b")),
+    ("sendgrid", re.compile(r"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b")),
+    ("twilio", re.compile(r"\bSK[0-9a-fA-F]{32}\b")),
+    (
+        "private_key_block",
+        re.compile(r"-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----"),
+    ),
+]
+
+GENERIC_KEYED_VALUE = re.compile(
+    r"""(?ix)
+    (token|api[_-]?key|secret|password|passwd|pwd|bearer|auth[_-]?token|access[_-]?token)
+    \s*[:=]\s*(?P<q>['"])(?P<val>[^'"]{16,})(?P=q)
+"""
+)
+
+BARE_GENERIC_VALUE = re.compile(
+    r"(?P<bare>(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-]))"
+)
+
+# Public compatibility pattern used by MCP diff validation. Keep this linear:
+# charset requirements for bare tokens are checked in Python by scan_ctx.
+GENERIC_VALUE = re.compile(
+    r"""(?ix)
+    (?:
+      (token|api[_-]?key|secret|password|passwd|pwd|bearer|auth[_-]?token|access[_-]?token)
+      \s*[:=]\s*(?P<q>['"])(?P<val>[^'"]{16,})(?P=q)
+    )
+    |
+    (?P<bare>(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-]))
+"""
+)
+
+SAFE_TEST_HINTS = {
+    "example",
+    "sample",
+    "fake",
+    "placeholder",
+    "dummy",
+    "test_",
+    "_test",
+    "test_test_",
+    "changeme",
+    "password",
+    "secret",
+    "not_a_real",
+    "do_not_use",
+}
+
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+KNOWN_HASH_VALUE_RE = re.compile(
+    r"(?i)"
+    r"(?:sha(?:1|224|256|384|512)[-:].+)"
+    r"|(?:[0-9a-f]{40})"
+    r"|(?:[0-9a-f]{64})"
+)
+KNOWN_HASH_FIELD_PREFIX_RE = re.compile(
+    r"""(?ix)
+    (?:^|[\s,{])
+    ['"]?(?:integrity|hash|checksum|resolved)['"]?
+    \s*[:=]\s*['"]?$
+"""
+)
+
+IGNORE_DIRECTIVE = "skylos: ignore[SKY-S101]"
+DEFAULT_MIN_ENTROPY = 3.9
+
+IS_TEST_PATH = re.compile(r"(^|/)(tests?(/|$)|test_[^/]+\.py$)")
+
+
+def _entropy(s):
+    if len(s) == 0:
+        return 0.0
+
+    char_counts = {}
+    for character in s:
+        if character in char_counts:
+            char_counts[character] += 1
+        else:
+            char_counts[character] = 1
+
+    total_chars = len(s)
+    entropy = 0.0
+
+    for count in char_counts.values():
+        probability = count / total_chars
+        entropy -= probability * log2(probability)
+
+    return entropy
+
+
+def _mask(tok):
+    token_length = len(tok)
+
+    if token_length <= 8:
+        return "*" * token_length
+
+    else:
+        first_part = tok[:4]
+        last_part = tok[-4:]
+        return first_part + "…" + last_part
+
+
+def _looks_like_identifier(s):
+    return bool(_IDENTIFIER.fullmatch(s))
+
+
+def _has_bare_token_charset_mix(s):
+    has_upper = False
+    has_lower = False
+    has_digit = False
+    for char in s:
+        if char.isupper():
+            has_upper = True
+        elif char.islower():
+            has_lower = True
+        elif char.isdigit():
+            has_digit = True
+        if has_upper and has_lower and has_digit:
+            return True
+    return False
+
+
+def _find_generic_value(line_content):
+    keyed_match = GENERIC_KEYED_VALUE.search(line_content)
+    if keyed_match:
+        keyed_token = keyed_match.group("val")
+        keyed_start = keyed_match.start("val")
+        if not _is_known_hash_candidate(keyed_token, line_content, keyed_start):
+            return keyed_token, False, keyed_start
+
+    for bare_match in BARE_GENERIC_VALUE.finditer(line_content):
+        bare_token = bare_match.group("bare")
+        bare_start = bare_match.start("bare")
+        if not _has_bare_token_charset_mix(bare_token):
+            continue
+        if _is_known_hash_candidate(bare_token, line_content, bare_start):
+            continue
+        return bare_token, True, bare_start
+
+    return None
+
+
+def _is_known_hash_candidate(token: str, line_content: str, start: int) -> bool:
+    clean_token = token.strip()
+    if KNOWN_HASH_VALUE_RE.fullmatch(clean_token):
+        return True
+
+    prefix = line_content[:start]
+    return bool(KNOWN_HASH_FIELD_PREFIX_RE.search(prefix))
+
+
+def _docstring_lines(tree):
+    if tree is None:
+        return set()
+
+    docstring_line_numbers = set()
+
+    def find_docstring_lines(node):
+        if not hasattr(node, "body") or not node.body:
+            return
+
+        first_statement = node.body[0]
+
+        is_expression = isinstance(first_statement, ast.Expr)
+        if not is_expression:
+            return
+
+        value = getattr(first_statement, "value", None)
+        if not isinstance(value, ast.Constant):
+            return
+
+        if not isinstance(value.value, str):
+            return
+
+        start_line = getattr(first_statement, "lineno", None)
+        end_line = getattr(first_statement, "end_lineno", start_line)
+
+        if start_line is not None:
+            if end_line is None:
+                end_line = start_line
+
+            for line_num in range(start_line, end_line + 1):
+                docstring_line_numbers.add(line_num)
+
+    if isinstance(tree, ast.Module):
+        find_docstring_lines(tree)
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            find_docstring_lines(node)
+
+    return docstring_line_numbers
+
+
+def scan_ctx(
+    ctx,
+    *,
+    min_entropy=DEFAULT_MIN_ENTROPY,
+    scan_comments=True,
+    scan_docstrings=True,
+    allowlist_patterns=None,
+    ignore_path_substrings=None,
+    ignore_tests=True,
+):
+    rel_path = ctx.get("relpath", "")
+    rel_name = rel_path.replace("\\", "/").rsplit("/", 1)[-1]
+    if not rel_path.endswith(ALLOWED_FILE_SUFFIXES) and not rel_name.startswith(
+        ".env."
+    ):
+        return []
+
+    if ignore_tests and IS_TEST_PATH.search(rel_path.replace("\\", "/")):
+        return []
+
+    if ignore_path_substrings:
+        for substring in ignore_path_substrings:
+            if substring and substring in rel_path:
+                return []
+
+    file_lines = ctx.get("lines") or []
+    syntax_tree = ctx.get("tree")
+
+    allowlist_regexes = []
+    if allowlist_patterns:
+        for pattern in allowlist_patterns:
+            compiled_regex = re.compile(pattern)
+            allowlist_regexes.append(compiled_regex)
+
+    if scan_docstrings:
+        docstring_lines = set()
+    else:
+        docstring_lines = _docstring_lines(syntax_tree)
+
+    findings = []
+
+    for line_number, raw_line in enumerate(file_lines, start=1):
+        line_content = raw_line.rstrip("\n")
+
+        if IGNORE_DIRECTIVE in line_content:
+            continue
+
+        stripped_line = line_content.lstrip()
+        if not scan_comments and stripped_line.startswith("#"):
+            continue
+
+        if not scan_docstrings and line_number in docstring_lines:
+            continue
+
+        should_skip_line = False
+        for regex_pattern in allowlist_regexes:
+            if regex_pattern.search(line_content):
+                should_skip_line = True
+                break
+
+        if should_skip_line:
+            continue
+
+        for provider_name, pattern_regex in PROVIDER_PATTERNS:
+            pattern_matches = pattern_regex.finditer(line_content)
+
+            for regex_match in pattern_matches:
+                potential_secret = regex_match.group(0)
+
+                token_lowercase = potential_secret.lower()
+                has_safe_hint = False
+
+                for safe_hint in SAFE_TEST_HINTS:
+                    if safe_hint in token_lowercase:
+                        has_safe_hint = True
+                        break
+
+                if has_safe_hint:
+                    continue
+
+                col_pos = line_content.find(potential_secret)
+
+                finding = {
+                    "rule_id": "SKY-S101",
+                    "severity": "CRITICAL",
+                    "provider": provider_name,
+                    "message": f"Potential {provider_name} secret detected",
+                    "file": rel_path,
+                    "line": line_number,
+                    "col": max(0, col_pos),
+                    "end_col": max(1, col_pos + len(potential_secret)),
+                    "preview": _mask(potential_secret),
+                }
+                findings.append(finding)
+
+        aws_key_indicators = ["AWS_SECRET_ACCESS_KEY", "aws_secret_access_key"]
+        line_has_aws_key = False
+
+        for indicator in aws_key_indicators:
+            if indicator in line_content or indicator in line_content.lower():
+                line_has_aws_key = True
+                break
+
+        if line_has_aws_key:
+            aws_secret_pattern = r"['\"]?([A-Za-z0-9/+=]{40})['\"]?"
+            aws_match = re.search(aws_secret_pattern, line_content)
+
+            if aws_match:
+                aws_token = aws_match.group(1)
+                tok_entropy = _entropy(aws_token)
+
+                if tok_entropy >= min_entropy:
+                    col_pos = line_content.find(aws_token)
+
+                    aws_finding = {
+                        "rule_id": "SKY-S101",
+                        "severity": "CRITICAL",
+                        "provider": "aws_secret_access_key",
+                        "message": "Potential AWS secret access key detected",
+                        "file": rel_path,
+                        "line": line_number,
+                        "col": max(0, col_pos),
+                        "end_col": max(1, col_pos + len(aws_token)),
+                        "preview": _mask(aws_token),
+                        "entropy": round(tok_entropy, 2),
+                    }
+                    findings.append(aws_finding)
+
+        in_tests = bool(IS_TEST_PATH.search(rel_path.replace("\\", "/")))
+
+        if in_tests:
+            generic_value = None
+        else:
+            generic_value = _find_generic_value(line_content)
+
+        if generic_value:
+            extracted_token, is_bare, col_pos = generic_value
+            clean_token = extracted_token.strip()
+
+            if clean_token:
+                if is_bare and _looks_like_identifier(clean_token):
+                    continue
+
+                token_lowercase = clean_token.lower()
+                has_safe_hint = False
+
+                for safe_hint in SAFE_TEST_HINTS:
+                    if safe_hint in token_lowercase:
+                        has_safe_hint = True
+                        break
+
+                if not has_safe_hint:
+                    tok_entropy = _entropy(clean_token)
+
+                    if tok_entropy >= min_entropy and len(clean_token) >= 20:
+                        generic_finding = {
+                            "rule_id": "SKY-S101",
+                            "severity": "CRITICAL",
+                            "provider": "generic",
+                            "message": f"High-entropy value detected (entropy={tok_entropy:.2f})",
+                            "file": rel_path,
+                            "line": line_number,
+                            "col": max(0, col_pos),
+                            "end_col": max(1, col_pos + len(clean_token)),
+                            "preview": _mask(clean_token),
+                            "entropy": round(tok_entropy, 2),
+                        }
+                        findings.append(generic_finding)
+
+    # S102: Client-side secret exposure
+    norm_path = "/" + rel_path.replace("\\", "/")
+    is_client_path = any(seg in norm_path for seg in CLIENT_PATHS)
+
+    if is_client_path:
+        for f in findings:
+            if f["rule_id"] == "SKY-S101":
+                f["rule_id"] = "SKY-S102"
+                f["message"] = (
+                    f"Client-side secret exposure: "
+                    f"Secret exposed in client-accessible path: {rel_path}"
+                )
+
+    if rel_path.endswith(JS_TS_SUFFIXES):
+        for line_number, raw_line in enumerate(file_lines, start=1):
+            line_content = raw_line.rstrip("\n")
+            for m in CLIENT_ENV_RE.finditer(line_content):
+                col_pos = m.start()
+                findings.append(
+                    {
+                        "rule_id": "SKY-S102",
+                        "severity": "CRITICAL",
+                        "message": (
+                            f"Client-side secret exposure: "
+                            f"Non-public env var '{m.group(0)}' may be bundled into client code"
+                        ),
+                        "file": rel_path,
+                        "line": line_number,
+                        "col": col_pos,
+                    }
+                )
+
+    return findings
