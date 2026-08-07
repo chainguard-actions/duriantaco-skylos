@@ -1,0 +1,61 @@
+name: Test Skylos security analysis in scan mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test-security-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        name: Run Skylos security analysis in scan mode
+        uses: .
+        with:
+          path: tests/fixtures/clean_python
+          mode: scan
+          analysis: security
+          confidence: "60"
+
+      - name: Assert outputs are set correctly
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          # findings-count must be a non-negative integer
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+          # report-path must be non-empty
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT"
+
+      - name: Assert report file is valid JSON with expected structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking report file: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at $REPORT"
+            exit 1
+          fi
+
+          # Validate JSON and check it is an object (dict)
+          python3 -c "
+          import json, sys
+          with open('$REPORT') as f:
+              data = json.load(f)
+          if not isinstance(data, dict):
+              print('FAIL: report is not a JSON object')
+              sys.exit(1)
+          print('PASS: report is a valid JSON object with keys:', list(data.keys()))
+          "

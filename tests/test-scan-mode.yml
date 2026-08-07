@@ -1,0 +1,58 @@
+name: Test Skylos scan mode (report only)
+on:
+  workflow_dispatch:
+
+jobs:
+  test-scan-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        name: Run Skylos in scan mode
+        uses: .
+        with:
+          path: tests/fixtures/clean_python
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          # findings-count must be a non-negative integer
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+          # report-path must be non-empty
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT"
+
+      - name: Assert report file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking for report file: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists"
+
+          # Validate it is valid JSON
+          python3 -c "import json; json.load(open('$REPORT'))" || {
+            echo "FAIL: report file is not valid JSON"
+            exit 1
+          }
+          echo "PASS: report file is valid JSON"

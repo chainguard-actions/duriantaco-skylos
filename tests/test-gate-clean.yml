@@ -1,0 +1,48 @@
+name: Test Skylos gate mode on clean code
+on:
+  workflow_dispatch:
+
+jobs:
+  test-gate-clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        name: Run Skylos in gate mode on clean Python code
+        uses: .
+        with:
+          path: tests/fixtures/clean_python
+          mode: gate
+          analysis: dead-code
+          confidence: "60"
+
+      - name: Assert gate passed
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "gate-passed: $GATE_PASSED"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          if [ "$GATE_PASSED" != "true" ]; then
+            echo "FAIL: expected gate-passed=true but got '$GATE_PASSED'"
+            exit 1
+          fi
+          echo "PASS: gate passed as expected"
+
+          # findings-count must be a non-negative integer
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+          # report-path must be non-empty
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT"
