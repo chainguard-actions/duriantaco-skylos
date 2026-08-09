@@ -1,0 +1,610 @@
+from __future__ import annotations
+
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+from skylos.contracts import contract_finding_metadata
+from skylos.core.evidence_contract import finding_evidence_contract
+
+
+SCHEMA_VERSION = 2
+
+AI_VIBE_CATEGORIES = {
+    "hallucinated_reference",
+    "incomplete_generation",
+    "ghost_config",
+    "stale_reference",
+    "missing_resilience_control",
+    "api_signature_hallucination",
+    "assertion_weakening",
+    "ci_permission_expansion",
+    "dependency_hallucination",
+    "disabled_security_control",
+    "missing_auth_guard",
+    "swallowed_error",
+    "test_impact_gap",
+    "missing_contract_guardrail",
+    "public_api_surface_drift",
+}
+
+AI_RULE_DEFAULTS = {
+    "SKY-A101": ("assertion_weakening", "medium"),
+    "SKY-A102": ("test_impact_gap", "low"),
+    "SKY-A103": ("ci_permission_expansion", "high"),
+    "SKY-A104": ("public_api_surface_drift", "medium"),
+    "SKY-A105": ("missing_contract_guardrail", "high"),
+    "SKY-F102": ("missing_auth_guard", "medium"),
+    "SKY-L030": ("swallowed_error", "medium"),
+    "SKY-L012": ("hallucinated_reference", "high"),
+    "SKY-L011": ("disabled_security_control", "medium"),
+    "SKY-D222": ("dependency_hallucination", "high"),
+    "SKY-D224": ("api_signature_hallucination", "high"),
+    "SKY-D225": ("dependency_hallucination", "high"),
+    "SKY-L023": ("hallucinated_reference", "high"),
+}
+
+FINDING_SECTIONS = (
+    ("ai_defects", "ai_defect"),
+    ("quality", "quality"),
+    ("danger", "security"),
+    ("custom_rules", "custom"),
+)
+
+SUGGESTED_FIX_BY_VIBE = {
+    "hallucinated_reference": (
+        "Define or import the referenced symbol, or replace it with an existing helper."
+    ),
+    "incomplete_generation": "Implement the stub or remove the unfinished code path.",
+    "ghost_config": "Define the referenced config value or remove the stale flag check.",
+    "stale_reference": "Update the reference to the renamed symbol or remove it.",
+    "missing_resilience_control": "Add the missing timeout or resilience control.",
+    "disabled_security_control": "Re-enable the security control or remove the bypass.",
+    "missing_auth_guard": (
+        "Add an auth, permission, security dependency, or route guard."
+    ),
+    "swallowed_error": (
+        "Narrow the exception type and log, handle, or re-raise the failure."
+    ),
+    "dependency_hallucination": (
+        "Remove the hallucinated dependency or replace it with a real package."
+    ),
+    "api_signature_hallucination": (
+        "Update the call to match the installed package API surface."
+    ),
+    "assertion_weakening": (
+        "Restore the specific assertion or explain why the weaker test still proves the behavior."
+    ),
+    "test_impact_gap": (
+        "Add or update relevant tests, or document why behavior is unchanged."
+    ),
+    "ci_permission_expansion": (
+        "Restore the narrower workflow permissions or document why the broader CI trust boundary is required."
+    ),
+    "public_api_surface_drift": (
+        "Restore the public option or document the compatibility break."
+    ),
+    "missing_contract_guardrail": (
+        "Add one of the guard decorators required by the Skylos contract."
+    ),
+}
+
+
+def parse_line_range(value: str | None) -> tuple[int, int] | None:
+    if value is None:
+        return None
+
+    raw = str(value).strip()
+    if not raw:
+        return None
+
+    separator = _line_range_separator(raw)
+    if separator is None:
+        start = int(raw)
+        end = int(raw)
+    else:
+        left, right = raw.split(separator, 1)
+        start = int(left.strip())
+        end = int(right.strip())
+
+    _validate_line_range(start, end)
+    return start, end
+
+
+def build_verify_change_response(
+    analysis_result: dict[str, Any],
+    *,
+    project_root: str | Path,
+    target_file: str | Path | None = None,
+    line_range: str | tuple[int, int] | None = None,
+    scan_target: str | Path | None = None,
+    contract: Any | None = None,
+    include_security_findings: bool = False,
+) -> dict[str, Any]:
+    root = _project_root(project_root)
+    parsed_range = _coerce_line_range(line_range)
+    findings: list[dict[str, Any]] = []
+
+    for finding, category in _iter_ai_findings(
+        analysis_result,
+        include_security_findings=include_security_findings,
+    ):
+        if not _matches_target(finding, root, target_file):
+            continue
+        if not _matches_line_range(finding, parsed_range):
+            continue
+
+        normalized = _normalize_finding(finding, category, root, contract=contract)
+        findings.append(normalized)
+
+    findings.sort(
+        key=lambda item: (
+            _likelihood_sort(item["ai_likelihood"]),
+            item["range"]["file"],
+            item["range"]["start_line"],
+            item["rule_id"],
+        )
+    )
+
+    coverage = _verification_coverage(analysis_result)
+    coverage = _reconcile_response_coverage(coverage, findings)
+    status = _status_for_findings(findings, coverage)
+
+    response = {
+        "schema_version": SCHEMA_VERSION,
+        "tool": "verify_change",
+        "status": status,
+        "target": {
+            "path": _target_path_for_payload(scan_target, target_file, project_root),
+            "file": _target_file_for_payload(target_file, root),
+            "range": _range_for_payload(parsed_range),
+        },
+        "findings": findings,
+        "summary": _summary(findings, status, coverage),
+    }
+    if coverage is not None:
+        response["coverage"] = coverage
+    return response
+
+
+def _iter_ai_findings(
+    analysis_result: dict[str, Any],
+    *,
+    include_security_findings: bool = False,
+) -> Iterator[tuple[dict[str, Any], str]]:
+    for section, category in FINDING_SECTIONS:
+        for finding in _section_findings(analysis_result, section):
+            if _is_ai_finding(finding) or (
+                include_security_findings
+                and category == "security"
+                and _is_security_finding(finding)
+            ):
+                yield finding, category
+
+
+def _is_ai_finding(finding: dict[str, Any]) -> bool:
+    vibe = str(_finding_value(finding, ("vibe_category",), "")).strip()
+    if vibe in AI_VIBE_CATEGORIES:
+        return True
+
+    rule_id = str(_finding_value(finding, ("rule_id", "rule"), ""))
+    return rule_id in AI_RULE_DEFAULTS
+
+
+def _is_security_finding(finding: dict[str, Any]) -> bool:
+    rule_id = str(_finding_value(finding, ("rule_id", "rule"), "")).strip()
+    if not rule_id.startswith("SKY-D"):
+        return False
+    severity = str(_finding_value(finding, ("severity",), "")).strip().upper()
+    return severity in {"HIGH", "CRITICAL"}
+
+
+def _normalize_finding(
+    finding: dict[str, Any],
+    category: str,
+    root: Path,
+    *,
+    contract: Any | None = None,
+) -> dict[str, Any]:
+    rule_id = str(_finding_value(finding, ("rule_id", "rule"), "UNKNOWN"))
+    default_vibe, default_likelihood = _rule_defaults(rule_id)
+    vibe_category = str(_finding_value(finding, ("vibe_category",), default_vibe))
+    ai_likelihood = str(_finding_value(finding, ("ai_likelihood",), default_likelihood))
+    confidence = _confidence(finding.get("confidence"), ai_likelihood)
+    severity = str(_finding_value(finding, ("severity",), "MEDIUM")).upper()
+
+    normalized = {
+        "rule_id": rule_id,
+        "vibe_category": vibe_category,
+        "ai_likelihood": ai_likelihood,
+        "range": _finding_range(finding, root),
+        "message": _message(finding),
+        "suggested_fix": _suggested_fix(finding, vibe_category),
+        "confidence": confidence,
+        "severity": severity,
+        "category": category,
+    }
+    metadata = finding.get("metadata")
+    if isinstance(metadata, dict):
+        normalized["metadata"] = dict(metadata)
+    evidence_contract = finding_evidence_contract(finding)
+    if evidence_contract is not None:
+        normalized["evidence_contract"] = evidence_contract
+    normalized.update(contract_finding_metadata(contract, finding))
+    return normalized
+
+
+def _finding_range(finding: dict[str, Any], root: Path) -> dict[str, Any]:
+    line_value = _finding_value(finding, ("line", "line_number"), None)
+    line = _positive_int(line_value, default=1)
+    col_value = _finding_value(finding, ("col", "column"), None)
+    col = _non_negative_int(col_value, default=0)
+    end_line_value = _finding_value(finding, ("end_line", "endLine"), None)
+    end_line = _positive_int(end_line_value, default=line)
+    end_col_value = _finding_value(finding, ("end_col", "endCol"), None)
+    file_value = _finding_value(finding, ("file", "file_path"), None)
+
+    return {
+        "file": _relative_file(file_value, root),
+        "start_line": line,
+        "start_col": col,
+        "end_line": max(line, end_line),
+        "end_col": _non_negative_int(end_col_value, default=col),
+    }
+
+
+def _matches_target(
+    finding: dict[str, Any],
+    root: Path,
+    target_file: str | Path | None,
+) -> bool:
+    if target_file is None:
+        return True
+
+    finding_file = _finding_value(finding, ("file", "file_path"), None)
+    if not finding_file:
+        return False
+
+    finding_keys = _file_keys(finding_file, root)
+    target_keys = _file_keys(target_file, root)
+    return finding_keys & target_keys != set()
+
+
+def _matches_line_range(
+    finding: dict[str, Any],
+    line_range: tuple[int, int] | None,
+) -> bool:
+    if line_range is None:
+        return True
+
+    start, end = line_range
+    line_value = _finding_value(finding, ("line", "line_number"), None)
+    line = _positive_int(line_value, default=1)
+    end_line_value = _finding_value(finding, ("end_line", "endLine"), None)
+    finding_end = _positive_int(end_line_value, default=line)
+    return not (finding_end < start or line > end)
+
+
+def _file_keys(path: str | Path, root: Path) -> set[str]:
+    raw = Path(path)
+    keys = {str(raw).replace("\\", "/")}
+    try:
+        if raw.is_absolute():
+            resolved = raw
+        else:
+            resolved = root / raw
+
+        absolute = resolved.resolve()
+        keys.add(str(absolute).replace("\\", "/"))
+        keys.add(str(absolute.relative_to(root)).replace("\\", "/"))
+    except (OSError, ValueError):
+        pass
+    return keys
+
+
+def _relative_file(path: Any, root: Path) -> str:
+    if not path:
+        return "unknown"
+
+    raw = Path(str(path))
+    try:
+        if raw.is_absolute():
+            resolved = raw
+        else:
+            resolved = root / raw
+
+        relative = resolved.resolve().relative_to(root)
+        return str(relative).replace("\\", "/")
+    except (OSError, ValueError):
+        return str(raw).replace("\\", "/")
+
+
+def _project_root(path: str | Path) -> Path:
+    candidate = Path(path).expanduser()
+    if candidate.is_file():
+        candidate = candidate.parent
+    try:
+        return candidate.resolve()
+    except OSError:
+        return candidate
+
+
+def _coerce_line_range(
+    value: str | tuple[int, int] | None,
+) -> tuple[int, int] | None:
+    if isinstance(value, tuple):
+        start, end = value
+        _validate_line_range(start, end)
+        return start, end
+    return parse_line_range(value)
+
+
+def _target_file_for_payload(target_file: str | Path | None, root: Path) -> str | None:
+    if target_file is None:
+        return None
+    return _relative_file(target_file, root)
+
+
+def _range_for_payload(line_range: tuple[int, int] | None) -> dict[str, int] | None:
+    if line_range is None:
+        return None
+    start, end = line_range
+    return {"start_line": start, "end_line": end}
+
+
+def _summary(
+    findings: list[dict[str, Any]],
+    status: str,
+    coverage: dict[str, Any] | None,
+) -> str:
+    count = len(findings)
+    if count == 0:
+        if status == "incomplete":
+            skipped = _skipped_reference_count(coverage)
+            if skipped == 1:
+                return "Verification incomplete: 1 reference could not be proven"
+            if skipped:
+                return (
+                    f"Verification incomplete: {skipped} references could not be proven"
+                )
+            incomplete_checks = _incomplete_check_count(coverage)
+            if incomplete_checks == 1:
+                return "Verification incomplete: 1 required check did not complete"
+            if incomplete_checks:
+                return (
+                    "Verification incomplete: "
+                    f"{incomplete_checks} required checks did not complete"
+                )
+            return "Verification incomplete: required checks did not complete"
+        return "No AI-code issues found"
+    if count == 1:
+        issue_word = "issue"
+    else:
+        issue_word = "issues"
+    return f"{count} AI-code {issue_word} found"
+
+
+def _message(finding: dict[str, Any]) -> str:
+    message = _finding_value(finding, ("message", "detail", "msg"), None)
+    if message:
+        return str(message)
+
+    rule_id = _finding_value(finding, ("rule_id",), "UNKNOWN")
+    return f"{rule_id} finding"
+
+
+def _suggested_fix(finding: dict[str, Any], vibe_category: str) -> str | None:
+    fix = _finding_value(
+        finding,
+        ("suggested_fix", "fix", "recommendation"),
+        None,
+    )
+    if fix:
+        return str(fix)
+    return SUGGESTED_FIX_BY_VIBE.get(vibe_category)
+
+
+def _confidence(value: Any, ai_likelihood: str) -> int:
+    coerced = _optional_int(value)
+    if coerced is not None:
+        return min(100, max(0, coerced))
+
+    likelihood_scores = {"high": 90, "medium": 70, "low": 50}
+    return likelihood_scores.get(ai_likelihood.lower(), 70)
+
+
+def _likelihood_sort(value: str) -> int:
+    likelihood_order = {"high": 0, "medium": 1, "low": 2}
+    return likelihood_order.get(str(value).lower(), 3)
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _positive_int(value: Any, *, default: int) -> int:
+    parsed = _optional_int(value)
+    if parsed is None:
+        return default
+    if parsed <= 0:
+        return default
+    return parsed
+
+
+def _non_negative_int(value: Any, *, default: int) -> int:
+    parsed = _optional_int(value)
+    if parsed is None:
+        return default
+    if parsed < 0:
+        return default
+    return parsed
+
+
+def _line_range_separator(raw: str) -> str | None:
+    if ":" in raw:
+        return ":"
+    if "-" in raw:
+        return "-"
+    return None
+
+
+def _validate_line_range(start: int, end: int) -> None:
+    if start <= 0:
+        raise ValueError("line range values must be positive")
+    if end <= 0:
+        raise ValueError("line range values must be positive")
+    if end < start:
+        raise ValueError("line range end must be greater than or equal to start")
+
+
+def _status_for_findings(
+    findings: list[dict[str, Any]],
+    coverage: dict[str, Any] | None,
+) -> str:
+    if findings:
+        return "fail"
+    if isinstance(coverage, dict) and coverage.get("state") == "incomplete":
+        return "incomplete"
+    return "pass"
+
+
+def _verification_coverage(
+    analysis_result: dict[str, Any],
+) -> dict[str, Any] | None:
+    summary = analysis_result.get("analysis_summary")
+    if not isinstance(summary, dict):
+        return None
+    coverage = summary.get("ai_verification")
+    if not isinstance(coverage, dict):
+        return None
+    return dict(coverage)
+
+
+def _reconcile_response_coverage(
+    coverage: dict[str, Any] | None,
+    findings: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if not isinstance(coverage, dict) or findings:
+        return coverage
+    checks = coverage.get("checks")
+    if not isinstance(checks, list):
+        return coverage
+    normalized_checks = []
+    missing_evidence = False
+    for check in checks:
+        if not isinstance(check, dict):
+            normalized_checks.append(check)
+            continue
+        normalized = dict(check)
+        reasons = normalized.get("reasons")
+        normalized["reasons"] = (
+            [dict(reason) for reason in reasons if isinstance(reason, dict)]
+            if isinstance(reasons, list)
+            else []
+        )
+        if normalized.get("outcome") == "fail":
+            missing_evidence = True
+            normalized["outcome"] = "incomplete"
+            normalized["finding_count"] = 0
+            normalized["skipped_references"] = max(
+                1,
+                _optional_int(normalized.get("skipped_references")) or 0,
+            )
+            _append_coverage_reason(
+                normalized, "finding_evidence_missing_from_response"
+            )
+        normalized_checks.append(normalized)
+    if not missing_evidence:
+        return coverage
+    reconciled = dict(coverage)
+    reconciled["state"] = "incomplete"
+    reconciled["checks"] = normalized_checks
+    return reconciled
+
+
+def _append_coverage_reason(check: dict[str, Any], code: str) -> None:
+    reasons = check.setdefault("reasons", [])
+    for reason in reasons:
+        if reason.get("code") == code:
+            reason["count"] = max(1, _optional_int(reason.get("count")) or 0)
+            return
+    reasons.append({"code": code, "count": 1})
+    reasons.sort(key=lambda reason: str(reason.get("code", "")))
+
+
+def _skipped_reference_count(coverage: dict[str, Any] | None) -> int:
+    if not isinstance(coverage, dict):
+        return 0
+    checks = coverage.get("checks")
+    if not isinstance(checks, list):
+        return 0
+    total = 0
+    for check in checks:
+        if isinstance(check, dict):
+            total += max(0, _optional_int(check.get("skipped_references")) or 0)
+    return total
+
+
+def _incomplete_check_count(coverage: dict[str, Any] | None) -> int:
+    if not isinstance(coverage, dict):
+        return 0
+    checks = coverage.get("checks")
+    if not isinstance(checks, list):
+        return 0
+    return sum(
+        1
+        for check in checks
+        if isinstance(check, dict) and check.get("outcome") == "incomplete"
+    )
+
+
+def _target_path_for_payload(
+    scan_target: str | Path | None,
+    target_file: str | Path | None,
+    project_root: str | Path,
+) -> str:
+    for value in (scan_target, target_file, project_root):
+        if value is not None:
+            return str(value)
+    return "."
+
+
+def _finding_value(
+    finding: dict[str, Any],
+    keys: tuple[str, ...],
+    default: Any,
+) -> Any:
+    for key in keys:
+        value = finding.get(key)
+        if _has_value(value):
+            return value
+    return default
+
+
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        if value.strip() == "":
+            return False
+    return True
+
+
+def _section_findings(
+    analysis_result: dict[str, Any],
+    section: str,
+) -> list[dict[str, Any]]:
+    findings = analysis_result.get(section)
+    if isinstance(findings, list):
+        return findings
+    return []
+
+
+def _rule_defaults(rule_id: str) -> tuple[str, str]:
+    defaults = AI_RULE_DEFAULTS.get(rule_id)
+    if defaults is not None:
+        return defaults
+    return "", "medium"
