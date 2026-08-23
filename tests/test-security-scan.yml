@@ -1,0 +1,68 @@
+name: Test security analysis scan
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file with potential security issues
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/security-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/security-target/insecure.py" << 'EOF'
+          import subprocess
+          import os
+
+          def run_command(user_input):
+              # Potential command injection
+              result = subprocess.run(user_input, shell=True, capture_output=True)
+              return result.stdout
+
+          def get_env():
+              return os.environ.get("SECRET_KEY", "default-secret")
+
+          if __name__ == "__main__":
+              cmd = input("Enter command: ")
+              output = run_command(cmd)
+              print(output)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/security-target
+          mode: scan
+          analysis: security
+          confidence: "50"
+
+      - name: Assert findings-count output is a number
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          # Verify it's a valid integer
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count '$FINDINGS' is not a valid integer"
+            exit 1
+          fi
+          echo "PASS: findings-count is a valid integer: $FINDINGS"
+
+      - name: Assert report file is valid JSON with expected structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking report structure..."
+          python3 -c "
+          import json, sys
+          data = json.load(open('$REPORT'))
+          print('Report type:', type(data).__name__)
+          print('Report keys:', list(data.keys()) if isinstance(data, dict) else 'list')
+          print('PASS: report has valid structure')
+          "

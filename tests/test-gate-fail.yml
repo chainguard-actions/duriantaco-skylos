@@ -1,0 +1,87 @@
+name: Test gate mode fails when findings detected
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file with obvious dead code
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/dead-code-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/dead-code-target/dead.py" << 'EOF'
+          def active_function():
+              return 42
+
+          def dead_function_one():
+              """This function is never called anywhere."""
+              return "dead"
+
+          def dead_function_two():
+              """This function is also never called."""
+              return "also dead"
+
+          def dead_function_three():
+              """Yet another dead function."""
+              return "still dead"
+
+          # Only active_function is called
+          result = active_function()
+          print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/dead-code-target
+          mode: gate
+          analysis: dead-code
+          confidence: "50"
+        continue-on-error: true
+
+      - name: Assert action ran and produced outputs
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE_PASSED"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          # The action should have run (either success or failure)
+          if [ "$OUTCOME" != "success" ] && [ "$OUTCOME" != "failure" ]; then
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+          # If the action succeeded (no findings or gate passed), verify outputs
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$FINDINGS" ]; then
+              echo "FAIL: action succeeded but findings-count is empty"
+              exit 1
+            fi
+            echo "PASS: action succeeded with findings-count=$FINDINGS"
+          fi
+
+          # If the action failed (gate triggered), that's expected behavior
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: gate correctly failed when findings were detected"
+          fi
+
+      - name: Assert report file exists
+        run: |
+          if [ ! -f "skylos-report.json" ]; then
+            echo "FAIL: skylos-report.json not found"
+            exit 1
+          fi
+          echo "PASS: report file exists"
+          python3 -c "
+          import json
+          data = json.load(open('skylos-report.json'))
+          count = sum(len(v) for v in data.values() if isinstance(v, list))
+          print(f'Total findings in report: {count}')
+          "

@@ -1,0 +1,52 @@
+name: Test confidence threshold input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file to scan
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/confidence-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/confidence-target/app.py" << 'EOF'
+          def main():
+              print("Hello, World!")
+
+          def helper():
+              return "helper"
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - name: Scan with high confidence threshold (fewer findings expected)
+        id: high_confidence
+        uses: .
+        with:
+          path: tests/fixtures/confidence-target
+          mode: scan
+          analysis: dead-code security
+          confidence: "95"
+
+      - name: Assert high-confidence scan produced valid output
+        env:
+          FINDINGS: ${{ steps.high_confidence.outputs.findings-count }}
+          REPORT: ${{ steps.high_confidence.outputs.report-path }}
+        run: |
+          echo "High confidence findings: $FINDINGS"
+          echo "Report path: $REPORT"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count is empty for high confidence scan"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count '$FINDINGS' is not a valid integer"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at '$REPORT'"
+            exit 1
+          fi
+          echo "PASS: high confidence scan produced valid output (findings=$FINDINGS)"

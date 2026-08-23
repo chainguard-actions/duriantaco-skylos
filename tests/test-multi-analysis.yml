@@ -1,0 +1,80 @@
+name: Test multiple analysis types
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file for multi-analysis scan
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/multi-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/multi-target/multi.py" << 'EOF'
+          import os
+          import subprocess
+
+          def process_data(data):
+              """Process input data."""
+              return data.strip()
+
+          def unused_helper():
+              """This function is never called."""
+              return "unused"
+
+          def run_cmd(cmd):
+              """Run a shell command."""
+              return subprocess.run(cmd, shell=True, capture_output=True)
+
+          if __name__ == "__main__":
+              user_data = input("Enter data: ")
+              result = process_data(user_data)
+              print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/multi-target
+          mode: scan
+          analysis: dead-code security quality
+          confidence: "60"
+
+      - name: Assert all outputs are set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count '$FINDINGS' is not a valid non-negative integer"
+            exit 1
+          fi
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at '$REPORT'"
+            exit 1
+          fi
+          echo "PASS: multi-analysis scan completed with findings=$FINDINGS"
+
+      - name: Validate report JSON structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          python3 -c "
+          import json
+          data = json.load(open('$REPORT'))
+          assert isinstance(data, dict), f'Expected dict, got {type(data)}'
+          total = sum(len(v) for v in data.values() if isinstance(v, list))
+          print(f'Report contains {total} total findings across {len(data)} categories')
+          print('PASS: report structure is valid')
+          "

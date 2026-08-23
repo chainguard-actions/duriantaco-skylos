@@ -1,0 +1,66 @@
+name: Test basic scan mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a simple Python file to scan
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/scan-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/scan-target/sample.py" << 'EOF'
+          def used_function():
+              return "hello"
+
+          def unused_function():
+              return "this is never called"
+
+          result = used_function()
+          print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/scan-target
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count is '$FINDINGS'"
+
+      - name: Assert report file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at '$REPORT'"
+            exit 1
+          fi
+          echo "PASS: report file exists"
+
+      - name: Assert report is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating JSON report..."
+          python3 -c "import json; data = json.load(open('$REPORT')); print('Report keys:', list(data.keys()))"
+          echo "PASS: report is valid JSON"
