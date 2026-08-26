@@ -1,0 +1,71 @@
+name: Test scan mode (report only)
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create sample Python file to scan
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/sample-py"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/sample-py/main.py" << 'EOF'
+          def used_function():
+              return 42
+
+          def unused_function():
+              return "I am never called"
+
+          result = used_function()
+          print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/sample-py
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $COUNT"
+          echo "report-path: $REPORT"
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count '$COUNT' is not a non-negative integer"
+            exit 1
+          fi
+          echo "PASS: findings-count=$COUNT"
+
+      - name: Assert report file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file '$REPORT' does not exist"
+            exit 1
+          fi
+          echo "PASS: report file exists at $REPORT"
+
+      - name: Assert gate-passed is not set (scan mode skips gate)
+        env:
+          GATE: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: '$GATE'"
+          # In scan mode the Quality Gate step is skipped, so gate-passed should be empty
+          if [ "$GATE" = "false" ]; then
+            echo "FAIL: gate-passed should not be 'false' in scan mode (gate step is skipped)"
+            exit 1
+          fi
+          echo "PASS: gate-passed is '$GATE' (empty or true, gate step skipped in scan mode)"

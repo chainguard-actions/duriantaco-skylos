@@ -1,0 +1,1904 @@
+import json
+import pathlib
+import time
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+from skylos.pipeline import (
+    _norm,
+    _empty_result,
+    _enrich_with_llm_suggestions,
+    _infer_root,
+    _is_duplicate,
+    run_static_on_files,
+    run_pipeline,
+)
+
+FAKE_STATIC_RESULT = {
+    "definitions": {
+        "mod.used_func": {
+            "name": "used_func",
+            "file": "/proj/a.py",
+            "line": 10,
+            "type": "function",
+        },
+        "mod.dead_func": {
+            "name": "dead_func",
+            "file": "/proj/a.py",
+            "line": 20,
+            "type": "function",
+        },
+        "mod.MyClass": {
+            "name": "MyClass",
+            "file": "/proj/b.py",
+            "line": 1,
+            "type": "class",
+        },
+    },
+    "unused_functions": [
+        {
+            "name": "dead_func",
+            "file": "/proj/a.py",
+            "line": 20,
+            "message": "Unused function: dead_func",
+            "confidence": 75,
+        },
+    ],
+    "unused_imports": [
+        {
+            "name": "os",
+            "file": "/proj/a.py",
+            "line": 1,
+            "message": "Unused import: os",
+            "confidence": 90,
+        },
+    ],
+    "unused_variables": [],
+    "unused_parameters": [],
+    "unused_classes": [],
+    "danger": [
+        {
+            "name": "eval_call",
+            "file": "/proj/a.py",
+            "line": 30,
+            "message": "Use of eval()",
+            "confidence": 95,
+        },
+    ],
+    "reliability": [],
+    "quality": [
+        {
+            "name": "long_func",
+            "file": "/proj/b.py",
+            "line": 50,
+            "message": "Function too long",
+            "confidence": 60,
+        },
+    ],
+    "secrets": [],
+}
+
+
+def _fresh_static():
+    return json.loads(json.dumps(FAKE_STATIC_RESULT))
+
+
+def _agent_args(**overrides):
+    defaults = dict(
+        path="/proj",
+        quiet=False,
+        llm_only=False,
+        static_only=False,
+        skip_verification=False,
+        min_confidence="low",
+        verification_mode="production",
+        with_fixes=False,
+    )
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def _console():
+    c = MagicMock()
+    c.print = MagicMock()
+    return c
+
+
+def _llm_finding(
+    file="/proj/a.py",
+    line=99,
+    message="SQL injection",
+    rule_id="SEC-001",
+    severity="high",
+    confidence="high",
+    issue_type="security",
+    security_details=None,
+):
+    f = MagicMock()
+    f.location.file = file
+    f.location.line = line
+    f.message = message
+    f.rule_id = rule_id
+    f.severity.value = severity
+    f.confidence.value = confidence
+    f.issue_type.value = issue_type
+    f.security_details = security_details
+    return f
+
+
+P_ANALYZE = "skylos.analyzer.analyze"
+P_EXCLUDE = "skylos.constants.parse_exclude_folders"
+P_CUSTOM = "skylos.cloud.sync.get_custom_rules"
+P_LLM = "skylos.llm.analyzer.SkylosLLM"
+P_LLM_CONF = "skylos.llm.analyzer.AnalyzerConfig"
+P_CONF = "skylos.llm.schemas.Confidence"
+P_VERIFIER = "skylos.llm.dead_code_verifier.DeadCodeVerifierAgent"
+P_CREATE_DC_AGENT = "skylos.llm.agents.create_dead_code_agent"
+P_AGENTCFG = "skylos.llm.agents.AgentConfig"
+P_PROGRESS = "rich.progress.Progress"
+P_STATIC_FN = "skylos.pipeline.run_static_on_files"
+P_SECURITY_VERIFIER = "skylos.pipeline.SecurityVerifier"
+
+
+class TestNorm:
+    def test_resolves_path(self, tmp_path):
+        f = tmp_path / "a.py"
+        f.touch()
+        assert _norm(f) == str(f.resolve())
+
+    def test_fallback_on_bad_input(self):
+        assert _norm("\x00bad") == "\x00bad"
+
+
+class TestEmptyResult:
+    def test_has_all_keys(self):
+        r = _empty_result()
+        for k in [
+            "definitions",
+            "unused_functions",
+            "unused_imports",
+            "unused_variables",
+            "unused_parameters",
+            "unused_classes",
+            "danger",
+            "ai_defects",
+            "quality",
+            "secrets",
+        ]:
+            assert k in r
+
+    def test_definitions_is_dict_rest_are_lists(self):
+        r = _empty_result()
+        assert r["definitions"] == {}
+        for k in list(r):
+            if k != "definitions":
+                assert r[k] == []
+
+
+class TestInferRoot:
+    def test_finds_git_root(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        sub = tmp_path / "pkg"
+        sub.mkdir()
+        f = sub / "mod.py"
+        f.touch()
+        assert _infer_root(f) == tmp_path.resolve()
+
+    def test_finds_pyproject_root(self, tmp_path):
+        (tmp_path / "pyproject.toml").touch()
+        f = tmp_path / "src" / "mod.py"
+        f.parent.mkdir()
+        f.touch()
+        assert _infer_root(f) == tmp_path.resolve()
+
+    def test_accepts_directory(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        sub = tmp_path / "pkg"
+        sub.mkdir()
+        assert _infer_root(sub) == tmp_path.resolve()
+
+
+class TestIsDuplicate:
+    def test_same_file_line_message_prefix(self):
+        existing = [
+            {
+                "file": "/proj/a.py",
+                "line": 30,
+                "message": "Use of eval() is dangerous and should be avoided",
+            }
+        ]
+        new = {
+            "file": "/proj/a.py",
+            "line": 30,
+            "message": "Use of eval() is dangerous",
+        }
+        assert _is_duplicate(new, existing) is True
+
+    def test_nearby_line_within_tolerance(self):
+        existing = [
+            {
+                "file": "/proj/a.py",
+                "line": 30,
+                "message": "Use of eval() is dangerous and risky",
+            }
+        ]
+        new = {
+            "file": "/proj/a.py",
+            "line": 32,
+            "message": "Use of eval() is dangerous",
+        }
+        assert _is_duplicate(new, existing) is True
+
+    def test_different_file_not_dup(self):
+        existing = [{"file": "/proj/a.py", "line": 30, "message": "Use of eval()"}]
+        new = {"file": "/proj/b.py", "line": 30, "message": "Use of eval()"}
+        assert _is_duplicate(new, existing) is False
+
+    def test_far_line_not_dup(self):
+        existing = [{"file": "/proj/a.py", "line": 30, "message": "Use of eval()"}]
+        new = {"file": "/proj/a.py", "line": 100, "message": "Use of eval()"}
+        assert _is_duplicate(new, existing) is False
+
+    def test_different_message_not_dup(self):
+        existing = [{"file": "/proj/a.py", "line": 30, "message": "Use of eval()"}]
+        new = {
+            "file": "/proj/a.py",
+            "line": 30,
+            "message": "SQL injection vulnerability found here",
+        }
+        assert _is_duplicate(new, existing) is False
+
+    def test_empty_existing(self):
+        assert _is_duplicate({"file": "x", "line": 1, "message": "m"}, []) is False
+
+
+class TestRunStaticOnFiles:
+    @patch(P_CUSTOM, return_value=None)
+    @patch(P_EXCLUDE, return_value={"venv", ".venv"})
+    @patch(P_ANALYZE)
+    def test_analyzes_project_root_not_per_file(self, mock_analyze, _exc, _cust):
+        mock_analyze.return_value = json.dumps(FAKE_STATIC_RESULT)
+
+        run_static_on_files(
+            ["/proj/a.py", "/proj/b.py"],
+            project_root=pathlib.Path("/proj"),
+        )
+
+        mock_analyze.assert_called_once()
+        assert mock_analyze.call_args[0][0] == "/proj"
+
+    @patch(P_CUSTOM, return_value=None)
+    @patch(P_EXCLUDE, return_value={"venv"})
+    @patch(P_ANALYZE)
+    def test_filters_findings_to_target_files(self, mock_analyze, _exc, _cust):
+        mock_analyze.return_value = json.dumps(FAKE_STATIC_RESULT)
+
+        result = run_static_on_files(
+            ["/proj/a.py"],
+            project_root=pathlib.Path("/proj"),
+        )
+
+        assert len(result["unused_functions"]) == 1
+        assert len(result["danger"]) == 1
+        assert len(result["quality"]) == 0
+
+    @patch(P_CUSTOM, return_value=None)
+    @patch(P_EXCLUDE, return_value={"venv"})
+    @patch(P_ANALYZE)
+    def test_filters_ai_defects_to_target_files(self, mock_analyze, _exc, _cust):
+        data = _fresh_static()
+        data["ai_defects"] = [
+            {
+                "file": "/proj/a.py",
+                "line": 8,
+                "message": "Assertion weakened",
+                "rule_id": "SKY-A101",
+            },
+            {
+                "file": "/proj/b.py",
+                "line": 12,
+                "message": "Missing tests for risky change",
+                "rule_id": "SKY-A102",
+            },
+        ]
+        mock_analyze.return_value = json.dumps(data)
+
+        result = run_static_on_files(
+            ["/proj/a.py"],
+            project_root=pathlib.Path("/proj"),
+        )
+
+        assert [finding["rule_id"] for finding in result["ai_defects"]] == ["SKY-A101"]
+
+    @patch(P_CUSTOM, return_value=None)
+    @patch(P_EXCLUDE, return_value={"venv"})
+    @patch(P_ANALYZE)
+    def test_filters_reliability_to_target_files(self, mock_analyze, _exc, _cust):
+        data = _fresh_static()
+        data["reliability"] = [
+            {
+                "file": "/proj/a.py",
+                "line": 8,
+                "message": "External Ingress reaches reload mode.",
+                "rule_id": "SKY-DEP003",
+            },
+            {
+                "file": "/proj/b.py",
+                "line": 12,
+                "message": "CUDA target architecture missing from build.",
+                "rule_id": "SKY-GPU002",
+            },
+        ]
+        mock_analyze.return_value = json.dumps(data)
+
+        result = run_static_on_files(
+            ["/proj/a.py"],
+            project_root=pathlib.Path("/proj"),
+        )
+
+        assert [finding["rule_id"] for finding in result["reliability"]] == [
+            "SKY-DEP003"
+        ]
+
+    @patch(P_CUSTOM, return_value=None)
+    @patch(P_EXCLUDE, return_value={"venv"})
+    @patch(P_ANALYZE)
+    def test_keeps_full_defs_map(self, mock_analyze, _exc, _cust):
+        mock_analyze.return_value = json.dumps(FAKE_STATIC_RESULT)
+
+        result = run_static_on_files(
+            ["/proj/a.py"],
+            project_root=pathlib.Path("/proj"),
+        )
+
+        assert "mod.MyClass" in result["definitions"]
+        assert "mod.dead_func" in result["definitions"]
+
+    @patch(P_CUSTOM, return_value=None)
+    @patch(P_EXCLUDE, return_value={"venv", ".venv"})
+    @patch(P_ANALYZE)
+    def test_passes_exclude_folders(self, mock_analyze, _exc, _cust):
+        mock_analyze.return_value = json.dumps(FAKE_STATIC_RESULT)
+
+        run_static_on_files(["/proj/a.py"], project_root=pathlib.Path("/proj"))
+
+        kwargs = mock_analyze.call_args[1]
+        assert "exclude_folders" in kwargs
+        assert "venv" in kwargs["exclude_folders"]
+        assert kwargs["enable_ai_defects"] is True
+
+    def test_empty_files_returns_empty(self):
+        assert run_static_on_files([]) == _empty_result()
+
+    @patch(P_CUSTOM, return_value=None)
+    @patch(P_EXCLUDE, return_value=set())
+    @patch(P_ANALYZE, side_effect=RuntimeError("boom"))
+    def test_returns_empty_on_analyze_failure(self, _a, _e, _c):
+        result = run_static_on_files(["/proj/a.py"], project_root=pathlib.Path("/proj"))
+        assert result == _empty_result()
+
+    @patch(P_CUSTOM, return_value=None)
+    @patch(P_EXCLUDE, return_value=set())
+    @patch(P_ANALYZE)
+    def test_copies_analysis_summary(self, mock_analyze, _e, _c):
+        data = {**FAKE_STATIC_RESULT, "analysis_summary": {"total_files": 42}}
+        mock_analyze.return_value = json.dumps(data)
+
+        result = run_static_on_files(["/proj/a.py"], project_root=pathlib.Path("/proj"))
+        assert result["analysis_summary"]["total_files"] == 42
+
+    @patch(P_CUSTOM, return_value=None)
+    @patch(P_EXCLUDE, return_value=set())
+    @patch(P_ANALYZE)
+    def test_passes_changed_files_to_incremental_analyzer(self, mock_analyze, _e, _c):
+        mock_analyze.return_value = json.dumps(_fresh_static())
+
+        run_static_on_files(
+            ["/proj/a.py", "/proj/b.py"],
+            project_root=pathlib.Path("/proj"),
+        )
+
+        kwargs = mock_analyze.call_args.kwargs
+        assert sorted(kwargs["changed_files"]) == ["/proj/a.py", "/proj/b.py"]
+        assert kwargs["enable_ai_defects"] is True
+
+
+class TestPipelinePhase1:
+    @patch(P_LLM)
+    @patch(P_STATIC_FN, return_value=_fresh_static())
+    @patch(P_PROGRESS)
+    def test_categorises_static_findings(self, _prog, _static, mock_llm, tmp_path):
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        findings = run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(static_only=True, skip_verification=True),
+            console=_console(),
+            changed_files=[str(proj / "a.py")],
+        )
+
+        categories = {f.get("_category") for f in findings}
+        assert "dead_code" in categories
+
+    @patch(P_LLM)
+    @patch(P_PROGRESS)
+    def test_preserves_static_ai_defects_in_final_findings(
+        self, _prog, mock_llm, tmp_path
+    ):
+        static_result = _fresh_static()
+        static_result["ai_defects"] = [
+            {
+                "file": str(tmp_path / "proj" / "a.py"),
+                "line": 1,
+                "message": "Assertion weakened",
+                "rule_id": "SKY-A101",
+                "severity": "high",
+            }
+        ]
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        py_file = proj / "a.py"
+        py_file.write_text("assert value\n", encoding="utf-8")
+
+        with patch(P_STATIC_FN, return_value=static_result):
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(static_only=True, skip_verification=True),
+                console=_console(),
+                changed_files=[str(py_file)],
+            )
+
+        ai_defects = [
+            finding for finding in findings if finding.get("_category") == "ai_defects"
+        ]
+        assert len(ai_defects) == 1
+        assert ai_defects[0]["rule_id"] == "SKY-A101"
+        assert ai_defects[0]["_source"] == "static"
+        assert ai_defects[0]["_confidence"] == "medium"
+
+    @patch(P_LLM)
+    def test_uses_gitignore_aware_discovery_for_phase_2b(self, mock_llm, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        keep_file = proj / "app.py"
+        ignored_file = proj / "customenv" / "ghost.py"
+        ignored_file.parent.mkdir()
+        keep_file.write_text("x = 1")
+        ignored_file.write_text("x = 1")
+
+        llm_result = MagicMock()
+        llm_result.findings = []
+
+        with (
+            patch(P_STATIC_FN, return_value=_empty_result()),
+            patch(P_PROGRESS),
+            patch("skylos.pipeline.discover_source_files", return_value=[keep_file]),
+        ):
+            mock_llm.return_value.analyze_files.return_value = llm_result
+
+            run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(),
+                console=_console(),
+            )
+
+        analyze_files_args = mock_llm.return_value.analyze_files.call_args[0][0]
+        assert [str(f) for f in analyze_files_args] == [str(keep_file)]
+
+    @patch(P_LLM)
+    @patch(P_STATIC_FN, return_value=_fresh_static())
+    @patch(P_PROGRESS)
+    def test_dead_code_gets_static_source(self, _prog, _static, mock_llm, tmp_path):
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        findings = run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(static_only=True, skip_verification=True),
+            console=_console(),
+            changed_files=[str(proj / "a.py")],
+        )
+
+        dead = [f for f in findings if f["_category"] == "dead_code"]
+        assert all(f["_source"] == "static" for f in dead)
+
+    @patch(P_LLM)
+    @patch(P_ANALYZE)
+    @patch(P_PROGRESS)
+    def test_llm_only_mode_skips_static(self, _prog, mock_analyze, mock_llm, tmp_path):
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(llm_only=True),
+            console=_console(),
+        )
+
+        mock_analyze.assert_not_called()
+
+    @patch(P_LLM)
+    @patch(P_ANALYZE)
+    @patch(P_PROGRESS)
+    def test_llm_only_directory_scan_reviews_ordinary_python_files(
+        self, _prog, mock_analyze, mock_llm, tmp_path
+    ):
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        ordinary = proj / "views.py"
+        ordinary.write_text("def render():\n    return 'ok'\n", encoding="utf-8")
+
+        run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(llm_only=True),
+            console=_console(),
+        )
+
+        mock_analyze.assert_not_called()
+        analyze_files_args = mock_llm.return_value.analyze_files.call_args[0][0]
+        assert [str(f) for f in analyze_files_args] == [str(ordinary)]
+
+    @patch(P_LLM)
+    @patch(P_STATIC_FN, return_value=_fresh_static())
+    @patch(P_PROGRESS)
+    def test_generates_message_for_dead_code(self, _prog, _static, mock_llm, tmp_path):
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        findings = run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(static_only=True, skip_verification=True),
+            console=_console(),
+            changed_files=[str(proj / "a.py")],
+        )
+
+        dead = [f for f in findings if f["_category"] == "dead_code"]
+        for f in dead:
+            assert f.get("message"), f"Dead code finding missing message: {f}"
+
+
+class TestPipelinePhase2a:
+    def test_default_fast_review_skips_dead_code_verifier(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        py_file = proj / "a.py"
+        py_file.write_text("x = 1")
+
+        llm_result = MagicMock()
+        llm_result.findings = []
+        console = _console()
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_CREATE_DC_AGENT) as mock_factory,
+        ):
+            mock_llm.return_value.analyze_files.return_value = llm_result
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(skip_verification=True),
+                console=console,
+                changed_files=[str(py_file)],
+            )
+
+        dead = [f for f in findings if f["_category"] == "dead_code"]
+        assert len(dead) == 2
+        assert all(f["_confidence"] == "medium" for f in dead)
+        mock_factory.assert_not_called()
+        printed_messages = [str(call.args[0]) for call in console.print.call_args_list]
+        assert any(
+            "Skipping dead-code verification for fast review" in message
+            for message in printed_messages
+        )
+
+    def _run_with_verifier(self, verified_results, tmp_path, **extra_args):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("def dead_func(): pass")
+
+        mock_agent = MagicMock()
+        mock_agent.healthcheck.return_value = (True, "API connection successful")
+        mock_agent.verify_candidates.return_value = {
+            "verified_findings": verified_results,
+            "new_dead_code": [],
+            "entry_points": [],
+            "stats": {},
+        }
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_CREATE_DC_AGENT, return_value=mock_agent),
+            patch(P_AGENTCFG),
+        ):
+            mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(static_only=True, **extra_args),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        return findings, mock_agent
+
+    def test_true_positive_gets_high_confidence(self, tmp_path):
+        verified = [
+            {
+                "name": "dead_func",
+                "file": "/proj/a.py",
+                "line": 20,
+                "message": "Unused function: dead_func",
+                "_source": "static",
+                "_category": "dead_code",
+                "_llm_verdict": "TRUE_POSITIVE",
+            },
+        ]
+        findings, _ = self._run_with_verifier(verified, tmp_path)
+
+        dead = [f for f in findings if f.get("_category") == "dead_code"]
+        assert len(dead) == 1
+        assert dead[0]["_source"] == "static+llm"
+        assert dead[0]["_confidence"] == "high"
+
+    def test_false_positive_suppressed_from_output(self, tmp_path):
+        verified = [
+            {
+                "name": "dead_func",
+                "file": "/proj/a.py",
+                "line": 20,
+                "_category": "dead_code",
+                "_llm_verdict": "FALSE_POSITIVE",
+                "_llm_challenged": True,
+            },
+        ]
+        findings, _ = self._run_with_verifier(verified, tmp_path)
+
+        dead = [f for f in findings if f.get("_category") == "dead_code"]
+        assert len(dead) == 0
+
+    def test_uncertain_suppressed_from_output(self, tmp_path):
+        verified = [
+            {
+                "name": "dead_func",
+                "file": "/proj/a.py",
+                "line": 20,
+                "_category": "dead_code",
+                "_llm_verdict": "UNCERTAIN",
+            },
+        ]
+        findings, _ = self._run_with_verifier(verified, tmp_path)
+
+        dead = [f for f in findings if f.get("_category") == "dead_code"]
+        assert len(dead) == 0
+
+    def test_verifier_receives_defs_map_and_project_root(self, tmp_path):
+        _, mock_agent = self._run_with_verifier([], tmp_path)
+
+        kwargs = mock_agent.verify_candidates.call_args[1]
+        assert "defs_map" in kwargs
+        assert "project_root" in kwargs
+        assert kwargs["verification_mode"] == "production"
+
+    def test_skip_verification_passes_through(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+        ):
+            mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(static_only=True, skip_verification=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        dead = [f for f in findings if f["_category"] == "dead_code"]
+        assert len(dead) == 2
+        assert all(f["_confidence"] == "medium" for f in dead)
+
+    def test_verifier_failure_falls_back_gracefully(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        mock_agent = MagicMock()
+        mock_agent.healthcheck.return_value = (True, "API connection successful")
+        mock_agent.verify_candidates.side_effect = Exception("LLM down")
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_CREATE_DC_AGENT, return_value=mock_agent),
+            patch(P_AGENTCFG),
+        ):
+            mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(static_only=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        dead = [f for f in findings if f["_category"] == "dead_code"]
+        assert len(dead) == 0
+
+    def test_healthcheck_failure_marks_skipped_without_duplicates(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        mock_agent = MagicMock()
+        mock_agent.healthcheck.return_value = (False, "bad key")
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_CREATE_DC_AGENT, return_value=mock_agent),
+            patch(P_AGENTCFG),
+        ):
+            mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(static_only=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        dead = [f for f in findings if f["_category"] == "dead_code"]
+        assert len(dead) == 0
+
+    def test_parallel_agent_scan_reports_when_waiting_on_dead_code_verification(
+        self, tmp_path
+    ):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        py_file = proj / "a.py"
+        py_file.write_text("x = 1")
+
+        mock_agent = MagicMock()
+        mock_agent.healthcheck.return_value = (True, "API connection successful")
+
+        def slow_verify_candidates(**kwargs):
+            time.sleep(0.05)
+            return {
+                "verified_findings": [],
+                "new_dead_code": [],
+                "entry_points": [],
+                "stats": {},
+            }
+
+        mock_agent.verify_candidates.side_effect = slow_verify_candidates
+
+        llm_result = MagicMock()
+        llm_result.findings = []
+        console = _console()
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_CREATE_DC_AGENT, return_value=mock_agent),
+            patch(P_AGENTCFG),
+        ):
+            mock_llm.return_value.analyze_files.return_value = llm_result
+
+            run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(),
+                console=console,
+                changed_files=[str(py_file)],
+            )
+
+        printed_messages = [str(call.args[0]) for call in console.print.call_args_list]
+        assert any(
+            "Waiting for dead-code verification" in message
+            for message in printed_messages
+        )
+
+    def test_provider_and_base_url_passed_to_agent(self, tmp_path):
+        """Verify that --provider and --base-url reach the dead code agent."""
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("def dead_func(): pass")
+
+        mock_agent = MagicMock()
+        mock_agent.healthcheck.return_value = (True, "API connection successful")
+        mock_agent.verify_candidates.return_value = {
+            "verified_findings": [],
+            "new_dead_code": [],
+            "entry_points": [],
+            "stats": {},
+        }
+
+        args = _agent_args(static_only=True)
+        args.provider = "anthropic"
+        args.base_url = "https://custom.endpoint"
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_CREATE_DC_AGENT, return_value=mock_agent) as mock_factory,
+            patch(P_AGENTCFG),
+        ):
+            mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+            run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=args,
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        # Verify factory was called with provider and base_url
+        call_kwargs = mock_factory.call_args[1]
+        assert call_kwargs["provider"] == "anthropic"
+        assert call_kwargs["base_url"] == "https://custom.endpoint"
+
+
+class TestPipelinePhase2b:
+    def _run_with_llm_findings(self, llm_findings_list, tmp_path, **kw):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        llm_result = MagicMock()
+        llm_result.findings = llm_findings_list
+
+        with (
+            patch(P_STATIC_FN, return_value=_empty_result()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_SECURITY_VERIFIER) as mock_verifier,
+        ):
+            mock_llm.return_value.analyze_files.return_value = llm_result
+            mock_verifier.return_value.review_findings.return_value = {
+                "supported": 0,
+                "refuted": 0,
+                "undecided": len(llm_findings_list),
+                "refuted_findings": [],
+            }
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(**kw),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        return findings
+
+    def test_llm_findings_marked_needs_review(self, tmp_path):
+        findings = self._run_with_llm_findings(
+            [_llm_finding(issue_type="security")], tmp_path
+        )
+
+        llm = [f for f in findings if f["_source"] == "llm"]
+        assert len(llm) == 1
+        assert llm[0]["_needs_review"] is True
+        assert llm[0]["_ci_blocking"] is False
+        assert llm[0]["_security_evidence"] == "hypothesis"
+
+    def test_llm_dead_code_discoveries_included(self, tmp_path):
+        findings = self._run_with_llm_findings(
+            [
+                _llm_finding(
+                    issue_type="dead_code",
+                    line=10,
+                    rule_id="DC-001",
+                    message="unused func a",
+                ),
+                _llm_finding(
+                    issue_type="unused",
+                    line=20,
+                    rule_id="DC-002",
+                    message="unused func b",
+                ),
+                _llm_finding(
+                    issue_type="unreachable",
+                    line=30,
+                    rule_id="DC-003",
+                    message="unreachable code",
+                ),
+                _llm_finding(
+                    issue_type="security",
+                    line=40,
+                    rule_id="SEC-001",
+                    message="SQL injection",
+                ),
+            ],
+            tmp_path,
+        )
+
+        llm = [f for f in findings if f["_source"] == "llm"]
+        assert len(llm) == 4
+
+    def test_deduplicates_against_static(self, tmp_path):
+        security_details = {
+            "attack_path": "eval input reaches code execution",
+            "impact": "remote code execution",
+            "fix": "avoid eval",
+            "evidence_lines": [31],
+            "unsafe_if": "input is user controlled",
+        }
+        llm_dup = _llm_finding(
+            file="/proj/a.py",
+            line=31,
+            message="Use of eval()",
+            issue_type="security",
+            security_details=security_details,
+        )
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        llm_result = MagicMock()
+        llm_result.findings = [llm_dup]
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_SECURITY_VERIFIER) as mock_verifier,
+        ):
+            mock_llm.return_value.analyze_files.return_value = llm_result
+            mock_verifier.return_value.review_findings.return_value = {
+                "supported": 0,
+                "refuted": 0,
+                "undecided": 0,
+                "refuted_findings": [],
+            }
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(skip_verification=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        mock_verifier.return_value.review_findings.assert_not_called()
+        llm_only = [f for f in findings if f["_source"] == "llm"]
+        assert len(llm_only) == 0
+        static_eval = next(f for f in findings if f.get("message") == "Use of eval()")
+        assert static_eval["_llm_security_details"] == security_details
+        assert static_eval["security_details"] == security_details
+
+    def test_unmatched_security_findings_use_rereview_metadata(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        llm_result = MagicMock()
+        llm_result.findings = [_llm_finding(issue_type="security")]
+
+        with (
+            patch(P_STATIC_FN, return_value=_empty_result()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_SECURITY_VERIFIER) as mock_verifier,
+        ):
+            mock_llm.return_value.analyze_files.return_value = llm_result
+
+            def _review(findings):
+                findings[0]["_security_evidence"] = "review_supported"
+                findings[0]["_review_verdict"] = "SUPPORTED"
+                return {
+                    "supported": 1,
+                    "refuted": 0,
+                    "undecided": 0,
+                    "refuted_findings": [],
+                }
+
+            mock_verifier.return_value.review_findings.side_effect = _review
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(skip_verification=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        llm = [f for f in findings if f["_source"] == "llm"]
+        assert llm[0]["_security_evidence"] == "review_supported"
+        assert llm[0]["_review_verdict"] == "SUPPORTED"
+
+    def test_security_rereview_failure_keeps_hypothesis(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        llm_result = MagicMock()
+        llm_result.findings = [_llm_finding(issue_type="security")]
+
+        with (
+            patch(P_STATIC_FN, return_value=_empty_result()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_SECURITY_VERIFIER) as mock_verifier,
+        ):
+            mock_llm.return_value.analyze_files.return_value = llm_result
+            mock_verifier.return_value.review_findings.side_effect = RuntimeError(
+                "down"
+            )
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(skip_verification=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        llm = [f for f in findings if f["_source"] == "llm"]
+        assert llm[0]["_security_evidence"] == "hypothesis"
+
+    def test_static_only_skips_llm_analysis(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+        ):
+            mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+            run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(static_only=True, skip_verification=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+            mock_llm.return_value.analyze_files.assert_not_called()
+
+    def test_llm_failure_doesnt_crash(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+        ):
+            mock_llm.return_value.analyze_files.side_effect = Exception("API down")
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(skip_verification=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        assert len(findings) > 0
+
+    def test_llm_confidence_always_medium(self, tmp_path):
+        findings = self._run_with_llm_findings(
+            [_llm_finding(issue_type="security", confidence="high")], tmp_path
+        )
+
+        llm = [f for f in findings if f["_source"] == "llm"]
+        assert llm[0]["_confidence"] == "medium"
+
+    def test_changed_scan_only_sends_python_files_to_llm_audit(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        py_file = proj / "a.py"
+        ts_file = proj / "b.tsx"
+        py_file.write_text("x = 1")
+        ts_file.write_text("export const x = 1;")
+
+        llm_result = MagicMock()
+        llm_result.findings = []
+
+        with (
+            patch(P_STATIC_FN, return_value=_empty_result()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+        ):
+            mock_llm.return_value.analyze_files.return_value = llm_result
+
+            run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(),
+                console=_console(),
+                changed_files=[str(py_file), str(ts_file)],
+            )
+
+        analyze_files_args = mock_llm.return_value.analyze_files.call_args[0][0]
+        assert [str(f) for f in analyze_files_args] == [str(py_file)]
+
+    @patch(P_STATIC_FN, return_value=_empty_result())
+    @patch(P_PROGRESS)
+    @patch(P_LLM)
+    def test_changed_scan_skips_symlinked_python_files(
+        self, mock_llm, _prog, _static, tmp_path
+    ):
+        proj = tmp_path / "proj"
+        outside = tmp_path / "outside"
+        proj.mkdir()
+        outside.mkdir()
+        (proj / "pyproject.toml").write_text("[project]\nname='demo'\n")
+        outside_secret = outside / "secret.py"
+        outside_secret.write_text("CANARY_OUTSIDE_SECRET\n", encoding="utf-8")
+        link = proj / "auth.py"
+        try:
+            link.symlink_to(outside_secret)
+        except OSError:
+            import pytest
+
+            pytest.skip("filesystem does not allow symlink creation")
+
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(skip_verification=True),
+            console=_console(),
+            changed_files=[str(link)],
+        )
+
+        mock_llm.return_value.analyze_files.assert_not_called()
+
+    @patch(P_STATIC_FN, return_value=_empty_result())
+    @patch(P_PROGRESS)
+    @patch(P_LLM)
+    def test_changed_scan_skips_paths_outside_project_root(
+        self, mock_llm, _prog, _static, tmp_path
+    ):
+        proj = tmp_path / "proj"
+        outside = tmp_path / "outside"
+        proj.mkdir()
+        outside.mkdir()
+        outside_file = outside / "auth.py"
+        outside_file.write_text("CANARY_OUTSIDE_SECRET\n", encoding="utf-8")
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(skip_verification=True),
+            console=_console(),
+            changed_files=[str(outside_file)],
+        )
+
+        mock_llm.return_value.analyze_files.assert_not_called()
+
+    @patch(P_ANALYZE)
+    @patch(P_PROGRESS)
+    @patch(P_LLM)
+    def test_single_file_scan_skips_symlinked_python_file(
+        self, mock_llm, _prog, mock_analyze, tmp_path
+    ):
+        proj = tmp_path / "proj"
+        outside = tmp_path / "outside"
+        proj.mkdir()
+        outside.mkdir()
+        outside_secret = outside / "secret.py"
+        outside_secret.write_text("CANARY_OUTSIDE_SECRET\n", encoding="utf-8")
+        link = proj / "review.py"
+        try:
+            link.symlink_to(outside_secret)
+        except OSError:
+            import pytest
+
+            pytest.skip("filesystem does not allow symlink creation")
+
+        findings = run_pipeline(
+            path=str(link),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(skip_verification=True),
+            console=_console(),
+        )
+
+        assert findings == []
+        mock_analyze.assert_not_called()
+        mock_llm.assert_not_called()
+
+    @patch(P_ANALYZE)
+    @patch(P_PROGRESS)
+    @patch(P_LLM)
+    def test_single_file_scan_always_sends_target_file_to_llm_audit(
+        self, mock_llm, _prog, mock_analyze, tmp_path
+    ):
+        py_file = tmp_path / "review.py"
+        py_file.write_text("def fake_call():\n    return 1\n", encoding="utf-8")
+
+        mock_analyze.return_value = json.dumps(_empty_result())
+        llm_result = MagicMock()
+        llm_result.findings = []
+        mock_llm.return_value.analyze_files.return_value = llm_result
+
+        run_pipeline(
+            path=str(py_file),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(skip_verification=True),
+            console=_console(),
+        )
+
+        analyze_files_args = mock_llm.return_value.analyze_files.call_args[0][0]
+        assert [str(f) for f in analyze_files_args] == [str(py_file)]
+
+    @patch(P_STATIC_FN, return_value=_empty_result())
+    @patch(P_PROGRESS)
+    @patch(P_LLM)
+    @patch(P_LLM_CONF)
+    def test_changed_scan_keeps_llm_context_minimized_and_repo_context(
+        self, mock_conf, mock_llm, _prog, _static, tmp_path
+    ):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        py_file = proj / "handler.py"
+        py_file.write_text(
+            "def handler(flag):\n    if flag:\n        return 1\n    return 0\n",
+            encoding="utf-8",
+        )
+
+        mock_conf.side_effect = lambda **kwargs: SimpleNamespace(**kwargs)
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+        fake_review_index = MagicMock()
+        fake_review_index.context_map_for.return_value = {
+            str(py_file.resolve()): "review_score=80"
+        }
+        fake_review_index.force_full_file_paths_for.return_value = {
+            str(py_file.resolve())
+        }
+
+        with patch(
+            "skylos.pipeline.build_repo_activation_index",
+            return_value=fake_review_index,
+        ):
+            run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(skip_verification=True),
+                console=_console(),
+                changed_files=[str(py_file)],
+            )
+
+        conf_kwargs = mock_conf.call_args.kwargs
+        assert conf_kwargs["smart_filter"] is True
+        assert conf_kwargs["full_file_review"] is False
+        assert conf_kwargs["force_full_file_paths"] == set()
+        repo_context_map = conf_kwargs["repo_context_map"]
+        assert str(py_file.resolve()) in repo_context_map
+        assert "review_score=" in repo_context_map[str(py_file.resolve())]
+
+    @patch(P_STATIC_FN, return_value=_empty_result())
+    @patch(P_PROGRESS)
+    @patch(P_LLM)
+    @patch(P_LLM_CONF)
+    def test_phase_2b_config_passes_provider_and_base_url(
+        self, mock_conf, mock_llm, _prog, _static, tmp_path
+    ):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        py_file = proj / "a.py"
+        py_file.write_text("x = 1")
+
+        mock_conf.side_effect = lambda **kwargs: SimpleNamespace(**kwargs)
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        args = _agent_args(skip_verification=True)
+        args.provider = "anthropic"
+        args.base_url = "https://custom.endpoint"
+
+        run_pipeline(
+            path=str(proj),
+            model="claude-sonnet-4-20250514",
+            api_key="k",
+            agent_args=args,
+            console=_console(),
+            changed_files=[str(py_file)],
+        )
+
+        conf_kwargs = mock_conf.call_args.kwargs
+        assert conf_kwargs["provider"] == "anthropic"
+        assert conf_kwargs["base_url"] == "https://custom.endpoint"
+
+    @patch(P_ANALYZE)
+    @patch(P_PROGRESS)
+    @patch(P_LLM)
+    @patch(P_LLM_CONF)
+    def test_single_file_scan_uses_full_file_review_config(
+        self, mock_conf, mock_llm, _prog, mock_analyze, tmp_path
+    ):
+        py_file = tmp_path / "review.py"
+        py_file.write_text("def fake_call():\n    return 1\n", encoding="utf-8")
+
+        mock_analyze.return_value = json.dumps(_empty_result())
+        mock_conf.side_effect = lambda **kwargs: SimpleNamespace(**kwargs)
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        run_pipeline(
+            path=str(py_file),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(skip_verification=True),
+            console=_console(),
+        )
+
+        conf_kwargs = mock_conf.call_args.kwargs
+        assert conf_kwargs["smart_filter"] is False
+        assert conf_kwargs["full_file_review"] is True
+
+    @patch(P_ANALYZE)
+    @patch(P_EXCLUDE, return_value=set())
+    @patch(P_PROGRESS)
+    @patch(P_LLM)
+    def test_full_scan_scopes_llm_audit_to_high_signal_files(
+        self, mock_llm, _prog, _exclude, mock_analyze, tmp_path
+    ):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        vuln_file = proj / "vuln.py"
+        quality_file = proj / "quality.py"
+        auth_file = proj / "auth_service.py"
+        misc_file = proj / "misc.py"
+        for file_path in (vuln_file, quality_file, auth_file, misc_file):
+            file_path.write_text("x = 1")
+
+        static_result = _empty_result()
+        static_result["danger"] = [
+            {
+                "file": str(vuln_file),
+                "line": 3,
+                "message": "SQL injection",
+                "confidence": 95,
+            }
+        ]
+        static_result["quality"] = [
+            {
+                "file": str(quality_file),
+                "line": 8,
+                "message": "Function too long",
+                "confidence": 70,
+            }
+        ]
+        mock_analyze.return_value = json.dumps(static_result)
+
+        llm_result = MagicMock()
+        llm_result.findings = []
+        mock_llm.return_value.analyze_files.return_value = llm_result
+
+        run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(skip_verification=True),
+            console=_console(),
+        )
+
+        analyze_files_args = mock_llm.return_value.analyze_files.call_args[0][0]
+        analyzed = {str(f) for f in analyze_files_args}
+        assert analyzed == {str(vuln_file), str(quality_file), str(auth_file)}
+        assert str(misc_file) not in analyzed
+
+    @patch(P_ANALYZE)
+    @patch(P_EXCLUDE, return_value=set())
+    @patch(P_PROGRESS)
+    @patch(P_LLM)
+    def test_phase_2b_stats_track_selected_and_skipped_files(
+        self, mock_llm, _prog, _exclude, mock_analyze, tmp_path
+    ):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        selected_file = proj / "app.py"
+        skipped_file = proj / "misc.py"
+        selected_file.write_text("x = 1")
+        skipped_file.write_text("x = 1")
+
+        mock_analyze.return_value = json.dumps(_empty_result())
+        llm_result = MagicMock()
+        llm_result.findings = []
+        mock_llm.return_value.analyze_files.return_value = llm_result
+
+        stats = {}
+        run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(skip_verification=True),
+            console=_console(),
+            stats_out=stats,
+        )
+
+        assert stats["llm_audit_total_python_files"] == 2
+        assert stats["llm_audit_selected_files"] == 1
+        assert stats["llm_audit_skipped_files"] == 1
+
+
+class TestPipelineOutput:
+    def test_high_confidence_sorted_before_medium(self, tmp_path):
+        verified = [
+            {
+                "name": "dead_func",
+                "file": "/proj/a.py",
+                "line": 20,
+                "_category": "dead_code",
+                "_llm_verdict": "TRUE_POSITIVE",
+                "_source": "static",
+                "message": "Unused function: dead_func",
+            },
+            {
+                "name": "os",
+                "file": "/proj/a.py",
+                "line": 1,
+                "_category": "dead_code",
+                "_llm_verdict": "UNCERTAIN",
+                "_source": "static",
+                "message": "Unused import: os",
+            },
+        ]
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        mock_agent = MagicMock()
+        mock_agent.healthcheck.return_value = (True, "API connection successful")
+        mock_agent.verify_candidates.return_value = {
+            "verified_findings": verified,
+            "new_dead_code": [],
+            "entry_points": [],
+            "stats": {},
+        }
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_CREATE_DC_AGENT, return_value=mock_agent),
+            patch(P_AGENTCFG),
+        ):
+            mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(static_only=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        confidences = [f["_confidence"] for f in findings]
+        high_idxs = [i for i, c in enumerate(confidences) if c == "high"]
+        med_idxs = [i for i, c in enumerate(confidences) if c == "medium"]
+
+        if high_idxs and med_idxs:
+            assert max(high_idxs) < min(med_idxs)
+
+    def test_every_finding_has_confidence(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_SECURITY_VERIFIER) as mock_verifier,
+        ):
+            mock_llm.return_value.analyze_files.return_value = MagicMock(
+                findings=[_llm_finding(issue_type="security")]
+            )
+            mock_verifier.return_value.review_findings.return_value = {
+                "supported": 0,
+                "refuted": 0,
+                "undecided": 1,
+                "refuted_findings": [],
+            }
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(skip_verification=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        for f in findings:
+            assert "_confidence" in f, f"Missing _confidence: {f}"
+            assert f["_confidence"] in ("high", "medium")
+
+    def test_every_finding_has_source_and_category(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_SECURITY_VERIFIER) as mock_verifier,
+        ):
+            mock_llm.return_value.analyze_files.return_value = MagicMock(
+                findings=[_llm_finding(issue_type="security")]
+            )
+            mock_verifier.return_value.review_findings.return_value = {
+                "supported": 0,
+                "refuted": 0,
+                "undecided": 1,
+                "refuted_findings": [],
+            }
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(skip_verification=True),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        for f in findings:
+            assert "_source" in f
+            assert "_category" in f
+
+
+class TestPipelinePhase3:
+    @patch("skylos.pipeline._enrich_with_llm_suggestions")
+    @patch(P_LLM)
+    @patch(P_STATIC_FN, return_value=_fresh_static())
+    @patch(P_PROGRESS)
+    def test_fix_suggestions_are_opt_in(
+        self, _prog, _static, mock_llm, mock_enrich, tmp_path
+    ):
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(skip_verification=True),
+            console=_console(),
+            changed_files=[str(proj / "a.py")],
+        )
+
+        mock_enrich.assert_not_called()
+
+    @patch("skylos.pipeline._enrich_with_llm_suggestions")
+    @patch(P_LLM)
+    @patch(P_STATIC_FN, return_value=_fresh_static())
+    @patch(P_PROGRESS)
+    def test_fix_suggestions_run_when_enabled(
+        self, _prog, _static, mock_llm, mock_enrich, tmp_path
+    ):
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(skip_verification=True, with_fixes=True),
+            console=_console(),
+            changed_files=[str(proj / "a.py")],
+        )
+
+        mock_enrich.assert_called_once()
+
+    @patch(P_LLM)
+    @patch(P_STATIC_FN, return_value=_fresh_static())
+    @patch(P_PROGRESS)
+    def test_collects_pipeline_stats(self, _prog, _static, mock_llm, tmp_path):
+        mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        stats = {}
+        run_pipeline(
+            path=str(proj),
+            model="t",
+            api_key="k",
+            agent_args=_agent_args(static_only=True, skip_verification=True),
+            console=_console(),
+            changed_files=[str(proj / "a.py")],
+            stats_out=stats,
+        )
+
+        assert "phase_1_seconds" in stats
+        assert "phase_2a_seconds" in stats
+        assert "phase_2b_seconds" in stats
+        assert "phase_3_seconds" in stats
+        assert "elapsed_seconds" in stats
+        assert stats["verification_mode"] == "production"
+
+    def test_enrich_suggestions_uses_adapter_with_runtime_settings(self, monkeypatch):
+        captured = {}
+
+        class FakeAdapter:
+            def __init__(
+                self,
+                *,
+                model,
+                api_key=None,
+                api_base=None,
+                provider=None,
+                enable_cache=True,
+                max_tokens=None,
+            ):
+                captured["init"] = {
+                    "model": model,
+                    "api_key": api_key,
+                    "api_base": api_base,
+                    "provider": provider,
+                    "enable_cache": enable_cache,
+                    "max_tokens": max_tokens,
+                }
+
+            def complete(self, system_prompt, user_prompt, response_format=None):
+                captured["complete"] = {
+                    "system_prompt": system_prompt,
+                    "user_prompt": user_prompt,
+                    "response_format": response_format,
+                }
+                return json.dumps(
+                    [
+                        {
+                            "line": 10,
+                            "rule_id": "SKY-Q301",
+                            "explanation": "too complex",
+                            "vulnerable_code": "bad()",
+                            "fixed_code": "good()",
+                        }
+                    ]
+                )
+
+        monkeypatch.setattr(
+            "skylos.adapters.litellm_adapter.LiteLLMAdapter",
+            FakeAdapter,
+        )
+
+        findings = [
+            {
+                "file": "/tmp/demo.py",
+                "line": 10,
+                "rule_id": "SKY-Q301",
+                "message": "Cyclomatic complexity is high",
+            }
+        ]
+
+        _enrich_with_llm_suggestions(
+            findings,
+            {str(pathlib.Path("/tmp/demo.py").resolve()): "def bad():\n    return 1\n"},
+            "claude-sonnet-4-20250514",
+            "KEY",
+            provider="anthropic",
+            base_url="https://custom.endpoint",
+        )
+
+        assert captured["init"]["provider"] == "anthropic"
+        assert captured["init"]["api_base"] == "https://custom.endpoint"
+        assert captured["init"]["max_tokens"] == 4000
+        assert findings[0]["fixed_code"] == "good()"
+        assert findings[0]["explanation"] == "too complex"
+
+
+class TestPipelineIntegration:
+    def test_full_flow_phase1_2a_2b(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("def dead_func(): pass\nimport os\neval('x')")
+
+        verified = [
+            {
+                "name": "dead_func",
+                "file": "/proj/a.py",
+                "line": 20,
+                "_category": "dead_code",
+                "_source": "static",
+                "_llm_verdict": "TRUE_POSITIVE",
+                "message": "Unused function: dead_func",
+            },
+            {
+                "name": "os",
+                "file": "/proj/a.py",
+                "line": 1,
+                "_category": "dead_code",
+                "_source": "static",
+                "_llm_verdict": "FALSE_POSITIVE",
+                "_llm_challenged": True,
+                "message": "Unused import: os",
+            },
+        ]
+
+        mock_agent = MagicMock()
+        mock_agent.healthcheck.return_value = (True, "API connection successful")
+        mock_agent.verify_candidates.return_value = {
+            "verified_findings": verified,
+            "new_dead_code": [],
+            "entry_points": [],
+            "stats": {},
+        }
+
+        llm_sec = _llm_finding(
+            file="/proj/a.py",
+            line=99,
+            message="Hardcoded credential found",
+            issue_type="security",
+        )
+
+        with (
+            patch(P_STATIC_FN, return_value=_fresh_static()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+            patch(P_CREATE_DC_AGENT, return_value=mock_agent),
+            patch(P_AGENTCFG),
+            patch(P_SECURITY_VERIFIER) as mock_verifier,
+        ):
+            mock_llm.return_value.analyze_files.return_value = MagicMock(
+                findings=[llm_sec]
+            )
+            mock_verifier.return_value.review_findings.return_value = {
+                "supported": 1,
+                "refuted": 0,
+                "undecided": 0,
+                "refuted_findings": [],
+            }
+
+            findings = run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(),
+                console=_console(),
+                changed_files=[str(proj / "a.py")],
+            )
+
+        sources = {f["_source"] for f in findings}
+        assert "static+llm" in sources
+        assert "llm" in sources
+        assert "static" in sources
+
+        llm_only = [f for f in findings if f["_source"] == "llm"]
+        assert all(f["_needs_review"] is True for f in llm_only)
+        assert all(f["_ci_blocking"] is False for f in llm_only)
+
+        dead = [f for f in findings if f.get("_category") == "dead_code"]
+        dead_names = [f.get("name") for f in dead]
+        assert "dead_func" in dead_names
+        assert "os" not in dead_names
+
+    def test_review_mode_calls_run_static_on_files(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        with (
+            patch(P_STATIC_FN) as mock_static,
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+        ):
+            mock_static.return_value = _empty_result()
+            mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+            changed = [str(proj / "a.py")]
+            run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(),
+                console=_console(),
+                changed_files=changed,
+            )
+
+            mock_static.assert_called_once()
+            assert mock_static.call_args[0][0] == changed
+
+    def test_analyze_mode_calls_run_analyze_directly(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "a.py").write_text("x = 1")
+
+        with (
+            patch(P_ANALYZE) as mock_analyze,
+            patch(P_EXCLUDE, return_value=set()),
+            patch(P_PROGRESS),
+            patch(P_LLM) as mock_llm,
+        ):
+            mock_analyze.return_value = json.dumps(_empty_result())
+            mock_llm.return_value.analyze_files.return_value = MagicMock(findings=[])
+
+            run_pipeline(
+                path=str(proj),
+                model="t",
+                api_key="k",
+                agent_args=_agent_args(),
+                console=_console(),
+            )
+
+            mock_analyze.assert_called_once()
+            assert mock_analyze.call_args[0][0] == str(proj)

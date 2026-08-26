@@ -1,0 +1,91 @@
+name: Test multiple analysis types with custom confidence
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file for multi-analysis scan
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/multi-analysis-py"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/multi-analysis-py/sample.py" << 'EOF'
+          import os
+          import sys
+
+          def process_data(data):
+              """Process some data."""
+              return data.strip()
+
+          def main():
+              value = process_data("  hello world  ")
+              print(value)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/multi-analysis-py
+          mode: scan
+          analysis: dead-code security quality
+          confidence: "70"
+
+      - name: Assert outputs are set correctly
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          GATE: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "findings-count: $COUNT"
+          echo "report-path: $REPORT"
+          echo "gate-passed: $GATE"
+
+          # findings-count must be a non-negative integer
+          if ! echo "$COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count '$COUNT' is not a non-negative integer"
+            exit 1
+          fi
+
+          # report-path must be set and the file must exist
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file '$REPORT' does not exist"
+            exit 1
+          fi
+
+          # In scan mode, gate step is skipped so gate-passed should be empty
+          if [ "$GATE" = "false" ]; then
+            echo "FAIL: gate-passed should not be 'false' in scan mode"
+            exit 1
+          fi
+
+          echo "PASS: all outputs are valid"
+
+      - name: Assert report contains expected structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating report structure..."
+          python3 - << 'PYEOF'
+          import json, sys
+
+          with open("skylos-report.json") as f:
+              data = json.load(f)
+
+          print("Report keys:", list(data.keys()))
+          print("Report type:", type(data).__name__)
+
+          if not isinstance(data, dict):
+              print("FAIL: report is not a JSON object")
+              sys.exit(1)
+
+          print("PASS: report has valid structure")
+          PYEOF
