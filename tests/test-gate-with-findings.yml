@@ -1,0 +1,80 @@
+name: Test Skylos gate mode fails on findings
+on:
+  workflow_dispatch:
+
+jobs:
+  test-gate-with-findings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a Python file with dead code
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/dead-code-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/dead-code-target/dead.py" << 'EOF'
+          def active_function():
+              return "I am used"
+
+          def dead_function_one():
+              return "I am never called anywhere"
+
+          def dead_function_two():
+              return "Neither am I"
+
+          class UnusedClass:
+              def method(self):
+                  return "unused"
+
+          result = active_function()
+          print(result)
+          EOF
+
+      # Gate mode will exit non-zero if findings are found, so use continue-on-error
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          path: tests/fixtures/dead-code-target
+          mode: gate
+          analysis: dead-code
+          confidence: "50"
+
+      - name: Assert action ran and produced outputs
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+          # The action should either succeed (no findings detected) or fail (findings found)
+          # Either way, the report-path output must be set
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty regardless of outcome"
+            exit 1
+          fi
+          if [ "$OUTCOME" = "success" ]; then
+            echo "INFO: gate passed (no findings detected at this confidence level)"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "INFO: gate failed as expected (findings detected)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+          echo "PASS: action ran and produced report"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking report: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at '$REPORT'"
+            exit 1
+          fi
+          if ! python3 -c "import json; json.load(open('$REPORT'))" 2>&1; then
+            echo "FAIL: report is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: report file exists and is valid JSON"

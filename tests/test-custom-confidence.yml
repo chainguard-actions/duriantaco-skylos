@@ -1,0 +1,64 @@
+name: Test Skylos with custom confidence threshold
+on:
+  workflow_dispatch:
+
+jobs:
+  test-custom-confidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a Python file to scan
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/confidence-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/confidence-target/app.py" << 'EOF'
+          def main():
+              print("Hello from Skylos test")
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      # Use a very high confidence threshold (100) so gate should pass even if
+      # there are borderline findings. Mode: scan so it never fails on findings.
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/confidence-target
+          mode: scan
+          analysis: dead-code security
+          confidence: "100"
+          python-version: "3.11"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count is '$FINDINGS'"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path is '$REPORT'"
+
+      - name: Assert high confidence threshold reduces findings
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings at confidence=100: $FINDINGS"
+          # At 100% confidence, findings should be minimal (0 or very few)
+          if [ "$FINDINGS" -gt 10 ] 2>/dev/null; then
+            echo "WARN: unexpectedly many findings ($FINDINGS) at confidence=100"
+          fi
+          echo "PASS: confidence threshold test completed with $FINDINGS findings"

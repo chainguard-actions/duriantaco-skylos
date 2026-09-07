@@ -1,0 +1,458 @@
+from __future__ import annotations
+
+import os
+import traceback
+from pathlib import Path
+
+from skylos.config import load_config
+from skylos.core.evidence_contract import attach_evidence_contract
+from skylos.reporting.architecture_result import attach_circular_and_architecture
+from skylos.reporting.dead_code_result import (
+    dead_code_candidate_decisions,
+    dead_code_evidence,
+    definition_context,
+    whitelisted_definitions,
+)
+from skylos.reporting.finding_categories import (
+    split_security_reliability_findings,
+)
+from skylos.reporting.rollups import attach_directory_rollups
+
+AI_DEFECT_RULE_IDS = {
+    "SKY-A101",
+    "SKY-L012",
+    "SKY-L023",
+    "SKY-D222",
+    "SKY-D224",
+    "SKY-D225",
+}
+
+
+def _debug_traceback():
+    if os.getenv("SKYLOS_DEBUG"):
+        traceback.print_exc()
+
+
+def _primary_path(path):
+    if not isinstance(path, (list, tuple)):
+        return path
+
+    for item in path:
+        return item
+
+    return "."
+
+
+def _normal_set(values):
+    return set(values or ())
+
+
+def build_analysis_result(
+    analyzer,
+    files,
+    thr,
+    exclude_folders,
+    enable_secrets,
+    enable_danger,
+    enable_quality,
+    enable_ai_defects,
+    enable_sca,
+    all_secrets,
+    all_dangers,
+    all_quality,
+    all_ai_defects,
+    all_sca,
+    all_suppressed,
+    empty_files,
+    modmap,
+    all_raw_imports,
+    path,
+    unused_ts_exports=None,
+    workspace_inventory=None,
+    architecture_abstractness=None,
+    architecture_loc=None,
+    architecture_main_guard_modules=None,
+    pyproject_entrypoint_qnames=None,
+    pyproject_entrypoint_modules=None,
+    config_file=None,
+    analysis_errors=None,
+):
+    """Assemble the final result dict from analysis outputs."""
+    architecture_main_guard_modules = _normal_set(architecture_main_guard_modules)
+    pyproject_entrypoint_qnames = _normal_set(pyproject_entrypoint_qnames)
+    pyproject_entrypoint_modules = _normal_set(pyproject_entrypoint_modules)
+
+    ledger, evidence = dead_code_evidence(
+        analyzer,
+        path,
+        pyproject_entrypoint_qnames,
+        threshold=thr,
+    )
+    unused, rescued, abstained = dead_code_candidate_decisions(
+        analyzer,
+        thr,
+        evidence,
+    )
+    context_map = definition_context(analyzer, thr, evidence)
+    whitelisted = whitelisted_definitions(analyzer, all_suppressed)
+
+    result = _base_result(
+        analyzer,
+        files,
+        exclude_folders,
+        context_map,
+        whitelisted,
+        all_suppressed,
+        evidence,
+        ledger,
+        rescued,
+        abstained,
+        unused,
+        analysis_errors,
+    )
+    _attach_analysis_reports(analyzer, result)
+    _attach_workspace(analyzer, result, workspace_inventory, path)
+    _attach_findings(
+        result,
+        enable_secrets,
+        enable_danger,
+        enable_ai_defects,
+        enable_sca,
+        all_secrets,
+        all_dangers,
+        all_ai_defects,
+        all_sca,
+    )
+    _attach_quality(result, enable_quality, enable_ai_defects, all_quality)
+    _attach_empty_files(result, empty_files)
+    _enrich_danger(result, enable_danger)
+    _bucket_unused_definitions(result, unused)
+    _attach_unused_ts_exports(result, unused_ts_exports)
+
+    project_cfg = load_config(_primary_path(path), config_file=config_file)
+    attach_circular_and_architecture(
+        result,
+        project_cfg,
+        files,
+        modmap,
+        all_raw_imports,
+        enable_quality,
+        all_quality,
+        architecture_abstractness,
+        architecture_loc,
+        architecture_main_guard_modules,
+        pyproject_entrypoint_qnames,
+        pyproject_entrypoint_modules,
+    )
+    _attach_grade(
+        result,
+        files,
+        enable_danger,
+        enable_quality,
+        enable_ai_defects,
+        enable_sca,
+        enable_secrets,
+    )
+    attach_directory_rollups(result, getattr(analyzer, "_project_root", None))
+    return result
+
+
+def _base_result(
+    analyzer,
+    files,
+    exclude_folders,
+    context_map,
+    whitelisted,
+    all_suppressed,
+    dead_code_evidence,
+    dead_code_ledger,
+    dead_code_rescues,
+    dead_code_abstentions,
+    reported_dead_code,
+    analysis_errors,
+):
+    normalized_analysis_errors = [
+        dict(error) for error in (analysis_errors or []) if isinstance(error, dict)
+    ]
+    evidence_summary = dead_code_ledger.summary()
+    evidence_summary["candidate_decisions"] = {
+        "reported": len(reported_dead_code),
+        "rescued": len(dead_code_rescues),
+        "abstained": len(dead_code_abstentions),
+    }
+    return {
+        "definitions": context_map,
+        "unused_functions": [],
+        "unused_imports": [],
+        "unused_classes": [],
+        "unused_variables": [],
+        "unused_parameters": [],
+        "unused_files": [],
+        "analysis_errors": normalized_analysis_errors,
+        "whitelisted": whitelisted,
+        "suppressed": all_suppressed,
+        "dead_code_evidence": dead_code_evidence,
+        "dead_code_rescues": dead_code_rescues,
+        "dead_code_abstentions": dead_code_abstentions,
+        "analysis_summary": {
+            "total_files": len(files),
+            "excluded_folders": exclude_folders or [],
+            "languages": analyzer._count_languages(files),
+            "analysis_error_count": len(normalized_analysis_errors),
+            "dead_code_evidence": evidence_summary,
+        },
+    }
+
+
+def _attach_analysis_reports(analyzer, result):
+    analysis_scope = getattr(analyzer, "_analysis_scope", None)
+    if isinstance(analysis_scope, dict):
+        result["analysis_summary"]["comparison_scope"] = dict(analysis_scope)
+
+    liveness_report = getattr(analyzer, "_dead_code_liveness_report", None)
+    if liveness_report is not None:
+        result["analysis_summary"]["dead_code_liveness"] = liveness_report.to_dict()
+
+    grep_verify_report = getattr(analyzer, "_grep_verify_report", None)
+    if grep_verify_report is not None:
+        result["analysis_summary"]["grep_verify"] = dict(grep_verify_report)
+
+    sca_coverage = getattr(analyzer, "_sca_coverage", None)
+    if isinstance(sca_coverage, dict):
+        result["analysis_summary"]["sca_coverage"] = dict(sca_coverage)
+
+    verification_checks = getattr(analyzer, "_ai_verification_checks", None)
+    if isinstance(verification_checks, list):
+        from skylos.core.verification_coverage import build_ai_verification_coverage
+
+        expected_checks = getattr(analyzer, "_ai_verification_expectations", None)
+        result["analysis_summary"]["ai_verification"] = build_ai_verification_coverage(
+            verification_checks,
+            expected_checks=expected_checks
+            if isinstance(expected_checks, list)
+            else None,
+        )
+
+    language_engines = getattr(analyzer, "_language_engine_reports", None)
+    if isinstance(language_engines, dict) and language_engines:
+        result["analysis_summary"]["language_engines"] = {
+            str(language): dict(report)
+            for language, report in language_engines.items()
+            if isinstance(report, dict)
+        }
+        incomplete_languages = sorted(
+            str(language)
+            for language, report in language_engines.items()
+            if isinstance(report, dict) and report.get("status") == "partial"
+        )
+        if incomplete_languages:
+            result["analysis_summary"]["incomplete_languages"] = incomplete_languages
+
+
+def _attach_workspace(analyzer, result, workspace_inventory, path):
+    if workspace_inventory is None:
+        return
+    if hasattr(analyzer, "_project_root"):
+        project_root = analyzer._project_root
+    else:
+        project_root = Path(_primary_path(path)).resolve()
+    summary = result["analysis_summary"]
+    result["workspaces"] = workspace_inventory.to_dict(project_root)
+    summary["monorepo_detected"] = workspace_inventory.is_monorepo
+    summary["workspace_count"] = len(workspace_inventory.packages)
+    summary["workspace_total_packages"] = workspace_inventory.total_packages
+    summary["workspace_diagnostic_count"] = len(workspace_inventory.diagnostics)
+
+
+def _attach_findings(
+    result,
+    enable_secrets,
+    enable_danger,
+    enable_ai_defects,
+    enable_sca,
+    all_secrets,
+    all_dangers,
+    all_ai_defects,
+    all_sca,
+):
+    summary = result["analysis_summary"]
+    if enable_secrets and all_secrets:
+        result["secrets"] = all_secrets
+        summary["secrets_count"] = len(all_secrets)
+    if enable_danger and all_dangers:
+        security_findings, reliability = split_security_reliability_findings(
+            all_dangers
+        )
+        core_danger, ai_defects = _split_ai_defect_findings(security_findings)
+        if core_danger:
+            result["danger"] = [
+                attach_evidence_contract(finding, analyzer_owned=True)
+                for finding in core_danger
+            ]
+            summary["danger_count"] = len(core_danger)
+        if reliability:
+            result["reliability"] = [
+                attach_evidence_contract(finding, analyzer_owned=True)
+                for finding in reliability
+            ]
+            summary["reliability_count"] = len(reliability)
+        if enable_ai_defects:
+            _append_ai_defects(result, ai_defects)
+    if enable_ai_defects:
+        _append_ai_defects(result, all_ai_defects)
+    if enable_sca:
+        result["dependency_vulnerabilities"] = all_sca
+        summary["sca_count"] = len(all_sca)
+
+
+def _split_ai_defect_findings(findings):
+    ai_defects = []
+    remaining = []
+    for finding in findings:
+        rule_id = str(finding.get("rule_id", ""))
+        if rule_id in AI_DEFECT_RULE_IDS:
+            ai_defects.append(finding)
+        else:
+            remaining.append(finding)
+    return remaining, ai_defects
+
+
+def _append_ai_defects(result, findings):
+    if not findings:
+        return
+    ai_defects = result.setdefault("ai_defects", [])
+    ai_defects.extend(
+        attach_evidence_contract(finding, analyzer_owned=True) for finding in findings
+    )
+    result["analysis_summary"]["ai_defects_count"] = len(ai_defects)
+
+
+def _split_quality_findings(all_quality):
+    custom_hits = []
+    non_custom = []
+    for finding in all_quality:
+        rule_id = str(finding.get("rule_id", ""))
+        if rule_id.startswith("CUSTOM-"):
+            custom_hits.append(finding)
+        else:
+            non_custom.append(finding)
+    core_quality, ai_defects = _split_ai_defect_findings(non_custom)
+    return core_quality, custom_hits, ai_defects
+
+
+def _attach_quality(result, enable_quality, enable_ai_defects, all_quality):
+    if not enable_quality or not all_quality:
+        return
+    core_quality, custom_hits, ai_defects = _split_quality_findings(all_quality)
+    if ai_defects or core_quality:
+        from skylos.rules.quality.standards import enrich_finding
+
+        for finding in ai_defects + core_quality:
+            enrich_finding(finding)
+    if enable_ai_defects:
+        _append_ai_defects(result, ai_defects)
+    if core_quality:
+        result["quality"] = core_quality
+        result["analysis_summary"]["quality_count"] = len(core_quality)
+    if custom_hits:
+        result["custom_rules"] = custom_hits
+        result["analysis_summary"]["custom_rules_count"] = len(custom_hits)
+
+
+def _attach_empty_files(result, empty_files):
+    if not empty_files:
+        return
+    result["unused_files"] = empty_files
+    result["analysis_summary"]["unused_files_count"] = len(empty_files)
+
+
+def _enrich_danger(result, enable_danger):
+    if not enable_danger or not result.get("danger"):
+        return
+    from skylos.rules.compliance import enrich_findings_with_compliance
+
+    result["danger"] = enrich_findings_with_compliance(result["danger"])
+
+
+def _bucket_unused_definitions(result, unused):
+    buckets = {
+        "function": "unused_functions",
+        "method": "unused_functions",
+        "import": "unused_imports",
+        "class": "unused_classes",
+        "type": "unused_classes",
+        "variable": "unused_variables",
+        "constant": "unused_variables",
+        "parameter": "unused_parameters",
+    }
+    for item in unused:
+        bucket = buckets.get(item["type"])
+        if bucket:
+            result[bucket].append(item)
+
+
+def _attach_unused_ts_exports(result, unused_ts_exports):
+    if not unused_ts_exports:
+        return
+    result.setdefault("unused_exports", []).extend(unused_ts_exports)
+    result["analysis_summary"]["unused_exports_count"] = len(unused_ts_exports)
+
+
+def _attach_grade(
+    result,
+    files,
+    enable_danger,
+    enable_quality,
+    enable_ai_defects,
+    enable_sca,
+    enable_secrets,
+):
+    try:
+        from skylos.reporting.grader import count_lines_of_code, compute_grade
+
+        total_loc = count_lines_of_code(files)
+        categories = _grade_categories(
+            enable_danger,
+            enable_quality,
+            enable_ai_defects,
+            enable_sca,
+            enable_secrets,
+        )
+        result["analysis_summary"]["total_loc"] = total_loc
+        result["analysis_summary"]["grade_categories"] = categories
+        if result.get("analysis_errors") or result["analysis_summary"].get(
+            "incomplete_languages"
+        ):
+            result["analysis_summary"]["grade_unavailable_reason"] = (
+                "analysis_incomplete"
+            )
+            return
+        result["grade"] = compute_grade(
+            result,
+            total_loc,
+            included_categories=categories,
+        )
+    except Exception:
+        _debug_traceback()
+
+
+def _grade_categories(
+    enable_danger,
+    enable_quality,
+    enable_ai_defects,
+    enable_sca,
+    enable_secrets,
+):
+    categories = []
+    if enable_danger:
+        categories.append("security")
+    if enable_quality:
+        categories.append("quality")
+    if enable_ai_defects:
+        categories.append("ai_defects")
+    categories.append("dead_code")
+    if enable_sca:
+        categories.append("dependencies")
+    if enable_secrets:
+        categories.append("secrets")
+    return categories

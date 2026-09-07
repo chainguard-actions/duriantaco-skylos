@@ -1,0 +1,80 @@
+name: Test Skylos security analysis
+on:
+  workflow_dispatch:
+
+jobs:
+  test-security-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a Python file with security issues
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/security-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/security-target/insecure.py" << 'EOF'
+          import subprocess
+          import os
+
+          # Security issue: use of eval with user input
+          def run_user_code(user_input):
+              return eval(user_input)
+
+          # Security issue: shell injection risk
+          def run_command(cmd):
+              return subprocess.call(cmd, shell=True)
+
+          # Security issue: hardcoded password
+          PASSWORD = "supersecret123"
+
+          if __name__ == "__main__":
+              run_user_code("1+1")
+              run_command("ls")
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/security-target
+          mode: scan
+          analysis: security
+          confidence: "50"
+
+      - name: Assert findings-count output is set and non-empty
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count is '$FINDINGS'"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path is '$REPORT'"
+
+      - name: Assert report file is valid JSON with expected structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating report structure: $REPORT"
+          python3 - << 'PYEOF'
+          import json, sys, os
+          report_path = os.environ.get("REPORT", "skylos-report.json")
+          with open(report_path) as f:
+              data = json.load(f)
+          print(f"Report keys: {list(data.keys())}")
+          print(f"Report type: {type(data)}")
+          if not isinstance(data, dict):
+              print("FAIL: report is not a JSON object")
+              sys.exit(1)
+          print("PASS: report has valid structure")
+          PYEOF
