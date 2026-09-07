@@ -26,6 +26,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | v4.33.2 | [`v4.33.2`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.33.2) | [`de23f0c`](https://github.com/duriantaco/skylos/commit/de23f0c52a21c724fdbdcdaa340fc573676e9f6a) |
 | v4.34.0 | [`v4.34.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.34.0) | [`f6dbaeb`](https://github.com/duriantaco/skylos/commit/f6dbaeb361e0d97622e83b2e9281e5462f395c2f) |
 | v4.35.0 | [`v4.35.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.35.0) | [`89d33c0`](https://github.com/duriantaco/skylos/commit/89d33c0e856f3451eb88c7f60410051ded8d3109) |
+| v4.36.0 | [`v4.36.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.36.0) | [`2c963dc`](https://github.com/duriantaco/skylos/commit/2c963dcec8097bb6e931819804e817f32f49a5b0) |
 
 ## Privacy
 
