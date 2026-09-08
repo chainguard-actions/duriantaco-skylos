@@ -1,0 +1,73 @@
+from .ai_defect_challenge import (
+    ACCEPTED_OUTCOME,
+    REFUTED_OUTCOME,
+    UNCERTAIN_OUTCOME,
+    AIDefectChallengeDecision,
+    AIDefectChallengeOutcome,
+    AIDefectChallengeProbe,
+    HighImpactFindingDetector,
+    StaticProofDetector,
+    build_ai_defect_challenge_metadata,
+    build_ai_defect_challenge_prompt,
+    default_ai_defect_challenge_tool_registry,
+    is_high_impact_ai_finding,
+    normalize_ai_defect_challenge_decisions,
+    run_ai_defect_challenge_harness,
+)
+from .runner import HarnessRunner
+from .replay import (
+    HarnessReplay,
+    HarnessReplayError,
+    HarnessReplayIssue,
+    load_harness_replay,
+)
+from .tools import (
+    HarnessTool,
+    HarnessToolRegistry,
+    default_verification_tool_registry,
+)
+from .types import (
+    HARNESS_SCHEMA_VERSION,
+    HarnessBudget,
+    HarnessBudgetExceeded,
+    HarnessDecision,
+    HarnessResult,
+    HarnessRun,
+    HarnessStep,
+    HarnessToolCall,
+)
+from .verification import run_verification_harness
+
+__all__ = [
+    "ACCEPTED_OUTCOME",
+    "REFUTED_OUTCOME",
+    "UNCERTAIN_OUTCOME",
+    "AIDefectChallengeDecision",
+    "AIDefectChallengeOutcome",
+    "AIDefectChallengeProbe",
+    "HarnessBudget",
+    "HarnessBudgetExceeded",
+    "HarnessDecision",
+    "HarnessReplay",
+    "HarnessReplayError",
+    "HarnessReplayIssue",
+    "HarnessResult",
+    "HarnessRun",
+    "HarnessRunner",
+    "HarnessStep",
+    "HarnessTool",
+    "HarnessToolCall",
+    "HarnessToolRegistry",
+    "HighImpactFindingDetector",
+    "HARNESS_SCHEMA_VERSION",
+    "StaticProofDetector",
+    "build_ai_defect_challenge_metadata",
+    "build_ai_defect_challenge_prompt",
+    "default_ai_defect_challenge_tool_registry",
+    "default_verification_tool_registry",
+    "is_high_impact_ai_finding",
+    "load_harness_replay",
+    "normalize_ai_defect_challenge_decisions",
+    "run_ai_defect_challenge_harness",
+    "run_verification_harness",
+]

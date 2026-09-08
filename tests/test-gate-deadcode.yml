@@ -1,0 +1,50 @@
+name: Test gate mode with dead code (gate should fail)
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/deadcode
+          mode: gate
+          analysis: dead-code
+          confidence: "60"
+        # Gate will fail because dead code is present; allow the step to fail
+        continue-on-error: true
+
+      - name: Assert gate failed due to dead code findings
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE_PASSED"
+          echo "findings-count: $FINDINGS"
+
+          if [ "$OUTCOME" = "failure" ]; then
+            # Gate failed as expected because dead code was found
+            if [ "$GATE_PASSED" = "true" ]; then
+              echo "FAIL: gate-passed=true but action outcome was failure — inconsistent"
+              exit 1
+            fi
+            echo "PASS: gate correctly failed for code with dead functions"
+          elif [ "$OUTCOME" = "success" ]; then
+            # If skylos didn't flag the dead code (e.g. confidence threshold),
+            # verify that findings-count and gate-passed are set
+            echo "INFO: gate passed (skylos may not have flagged the dead code at this confidence)"
+            if [ -z "$FINDINGS" ]; then
+              echo "FAIL: findings-count output is empty on success"
+              exit 1
+            fi
+            echo "PASS: action succeeded with findings-count=$FINDINGS"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

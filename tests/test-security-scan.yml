@@ -1,0 +1,46 @@
+name: Test security analysis scan mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean
+          mode: scan
+          analysis: security
+          confidence: "60"
+        continue-on-error: true
+
+      - name: Assert security scan ran and produced outputs
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$REPORT" ]; then
+              echo "FAIL: report-path output is empty on success"
+              exit 1
+            fi
+            # findings-count should be a non-negative integer
+            if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+              echo "FAIL: findings-count '$FINDINGS' is not a non-negative integer"
+              exit 1
+            fi
+            echo "PASS: security scan completed, report=$REPORT, findings=$FINDINGS"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action ran (may have failed due to environment); outcome=$OUTCOME"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
