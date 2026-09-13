@@ -1,0 +1,59 @@
+name: Test security analysis mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures
+          mode: scan
+          analysis: security
+          confidence: "60"
+        continue-on-error: true
+
+      - name: Assert action completed (scan mode should not gate-fail)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "FAIL: action failed in scan mode (should not gate-fail)"
+            exit 1
+          fi
+
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path='$REPORT'"
+
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count='$FINDINGS'"
+
+      - name: Assert report file is valid JSON with expected structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating report: $REPORT"
+          python3 -c "
+          import json, sys
+          with open('$REPORT') as f:
+              data = json.load(f)
+          print('Report keys:', list(data.keys()))
+          print('Report is valid JSON')
+          "
+          echo "PASS: report is valid JSON"

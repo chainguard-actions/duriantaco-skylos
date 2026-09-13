@@ -1,0 +1,58 @@
+name: Test gate mode with findings
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures
+          mode: gate
+          analysis: dead-code
+          confidence: "60"
+        # Gate mode may fail if findings exceed threshold — allow it
+        continue-on-error: true
+
+      - name: Assert gate-passed output is set
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE_PASSED"
+          echo "findings-count: $FINDINGS"
+
+          # gate-passed must be either "true" or "false"
+          if [ "$GATE_PASSED" != "true" ] && [ "$GATE_PASSED" != "false" ]; then
+            echo "FAIL: gate-passed output must be 'true' or 'false', got: '$GATE_PASSED'"
+            exit 1
+          fi
+          echo "PASS: gate-passed is '$GATE_PASSED'"
+
+          # If gate passed, outcome should be success; if gate failed, outcome should be failure
+          if [ "$GATE_PASSED" = "true" ] && [ "$OUTCOME" = "failure" ]; then
+            echo "FAIL: gate-passed=true but step outcome is failure"
+            exit 1
+          fi
+          if [ "$GATE_PASSED" = "false" ] && [ "$OUTCOME" = "success" ]; then
+            echo "FAIL: gate-passed=false but step outcome is success"
+            exit 1
+          fi
+          echo "PASS: gate-passed and outcome are consistent"
+
+      - name: Assert findings-count is a number
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count='$FINDINGS' is a valid integer"

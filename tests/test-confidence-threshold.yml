@@ -1,0 +1,88 @@
+name: Test custom confidence threshold
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Run with high confidence threshold (100) - should find fewer or no issues
+      - id: high-confidence
+        uses: .
+        with:
+          path: tests/fixtures
+          mode: scan
+          analysis: dead-code
+          confidence: "100"
+        continue-on-error: true
+
+      - name: Assert high-confidence scan completed
+        env:
+          OUTCOME: ${{ steps.high-confidence.outcome }}
+          FINDINGS: ${{ steps.high-confidence.outputs.findings-count }}
+          REPORT: ${{ steps.high-confidence.outputs.report-path }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "FAIL: action failed in scan mode with high confidence"
+            exit 1
+          fi
+
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path='$REPORT'"
+
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count='$FINDINGS' at confidence=100"
+
+      # Run with low confidence threshold (0) - should find more or equal issues
+      - id: low-confidence
+        uses: .
+        with:
+          path: tests/fixtures
+          mode: scan
+          analysis: dead-code
+          confidence: "0"
+        continue-on-error: true
+
+      - name: Assert low-confidence scan completed
+        env:
+          OUTCOME: ${{ steps.low-confidence.outcome }}
+          FINDINGS: ${{ steps.low-confidence.outputs.findings-count }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "FAIL: action failed in scan mode with low confidence"
+            exit 1
+          fi
+
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count='$FINDINGS' at confidence=0"
+
+      - name: Assert low confidence finds >= high confidence findings
+        env:
+          HIGH: ${{ steps.high-confidence.outputs.findings-count }}
+          LOW: ${{ steps.low-confidence.outputs.findings-count }}
+        run: |
+          echo "high-confidence findings: $HIGH"
+          echo "low-confidence findings: $LOW"
+          if [ "$LOW" -lt "$HIGH" ]; then
+            echo "FAIL: low confidence ($LOW) found fewer issues than high confidence ($HIGH)"
+            exit 1
+          fi
+          echo "PASS: low confidence ($LOW) >= high confidence ($HIGH)"

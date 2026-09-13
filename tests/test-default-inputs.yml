@@ -1,0 +1,66 @@
+name: Test default inputs
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Run with only path specified, all other inputs use defaults
+      # Default: mode=gate, analysis="dead-code security", confidence=60
+      # Gate mode may fail if findings exceed threshold
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures
+        continue-on-error: true
+
+      - name: Assert action ran and produced outputs
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+          echo "gate-passed: $GATE_PASSED"
+
+          # report-path must always be set
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path='$REPORT'"
+
+          # findings-count must always be set
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count='$FINDINGS'"
+
+          # gate-passed must be true or false (gate mode is default)
+          if [ "$GATE_PASSED" != "true" ] && [ "$GATE_PASSED" != "false" ]; then
+            echo "FAIL: gate-passed must be 'true' or 'false', got: '$GATE_PASSED'"
+            exit 1
+          fi
+          echo "PASS: gate-passed='$GATE_PASSED'"
+
+          # Consistency check: gate-passed=true => outcome=success, gate-passed=false => outcome=failure
+          if [ "$GATE_PASSED" = "true" ] && [ "$OUTCOME" = "failure" ]; then
+            echo "FAIL: gate-passed=true but step outcome is failure"
+            exit 1
+          fi
+          if [ "$GATE_PASSED" = "false" ] && [ "$OUTCOME" = "success" ]; then
+            echo "FAIL: gate-passed=false but step outcome is success"
+            exit 1
+          fi
+          echo "PASS: gate-passed and outcome are consistent"
