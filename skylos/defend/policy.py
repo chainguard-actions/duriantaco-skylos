@@ -1,0 +1,149 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Optional
+
+from skylos.defend.owasp import (
+    DEFAULT_OWASP_FRAMEWORK,
+    DEFAULT_OWASP_VERSION_BY_FRAMEWORK,
+    OWASP_LLM_MAPPING,
+    OWASP_REGISTRY,
+    compute_owasp_coverage,
+    get_owasp_mapping,
+    normalize_owasp_framework,
+    normalize_owasp_selection,
+    owasp_report_label,
+    plugin_ids_for_owasp_filter,
+    supported_owasp_frameworks,
+    supported_owasp_versions,
+    validate_owasp_ids,
+)
+
+__all__ = [
+    "DefensePolicy",
+    "DEFAULT_OWASP_FRAMEWORK",
+    "DEFAULT_OWASP_VERSION_BY_FRAMEWORK",
+    "OWASP_LLM_MAPPING",
+    "OWASP_REGISTRY",
+    "compute_owasp_coverage",
+    "get_owasp_mapping",
+    "load_policy",
+    "normalize_owasp_framework",
+    "normalize_owasp_selection",
+    "owasp_report_label",
+    "plugin_ids_for_owasp_filter",
+    "supported_owasp_frameworks",
+    "supported_owasp_versions",
+    "validate_owasp_ids",
+    "_parse_policy",
+]
+
+try:
+    import yaml
+
+    YAML_AVAILABLE = True
+except ImportError:
+    YAML_AVAILABLE = False
+
+
+@dataclass
+class DefensePolicy:
+    rules: dict[str, dict[str, Any]] = field(default_factory=dict)
+    gate_min_score: Optional[int] = None
+    gate_fail_on: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "rules": self.rules,
+            "gate": {
+                "min_score": self.gate_min_score,
+                "fail_on": self.gate_fail_on,
+            },
+        }
+
+
+def load_policy(path: str | Path | None = None) -> Optional[DefensePolicy]:
+    if path is None:
+        return None
+
+    policy_path = Path(path)
+
+    if not policy_path.exists():
+        raise FileNotFoundError(f"Policy file not found: {policy_path}")
+
+    if not YAML_AVAILABLE:
+        raise ImportError(
+            "PyYAML is required for policy files. Install with: pip install pyyaml"
+        )
+
+    raw = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"Invalid policy file: expected a YAML mapping, got {type(raw).__name__}"
+        )
+
+    return _parse_policy(raw)
+
+
+def _parse_policy(raw: dict) -> DefensePolicy:
+    valid_severities = {"critical", "high", "medium", "low"}
+    valid_plugin_ids = {
+        "no-dangerous-sink",
+        "tool-scope",
+        "tool-schema-present",
+        "prompt-delimiter",
+        "output-validation",
+        "model-pinned",
+        "input-length-limit",
+        "untrusted-input-to-prompt",
+        "rag-context-isolation",
+        "output-pii-filter",
+        "logging-present",
+        "cost-controls",
+        "rate-limiting",
+    }
+
+    rules: dict[str, dict] = {}
+    raw_rules = raw.get("rules", {})
+    if isinstance(raw_rules, dict):
+        for plugin_id, overrides in raw_rules.items():
+            if plugin_id not in valid_plugin_ids:
+                raise ValueError(
+                    f"Unknown plugin '{plugin_id}' in policy. "
+                    f"Valid plugins: {', '.join(sorted(valid_plugin_ids))}"
+                )
+            if not isinstance(overrides, dict):
+                raise ValueError(f"Invalid rule for '{plugin_id}': expected a mapping")
+            if (
+                "severity" in overrides
+                and overrides["severity"] not in valid_severities
+            ):
+                raise ValueError(
+                    f"Invalid severity '{overrides['severity']}' for '{plugin_id}'. "
+                    f"Valid: {', '.join(sorted(valid_severities))}"
+                )
+            rules[plugin_id] = overrides
+
+    gate = raw.get("gate", {})
+    gate_min_score = None
+    gate_fail_on = None
+    if isinstance(gate, dict):
+        gate_min_score = gate.get("min_score")
+        if gate_min_score is not None:
+            gate_min_score = int(gate_min_score)
+            if not 0 <= gate_min_score <= 100:
+                raise ValueError(f"gate.min_score must be 0-100, got {gate_min_score}")
+
+        gate_fail_on = gate.get("fail_on")
+        if gate_fail_on is not None and gate_fail_on not in valid_severities:
+            raise ValueError(
+                f"Invalid gate.fail_on '{gate_fail_on}'. "
+                f"Valid: {', '.join(sorted(valid_severities))}"
+            )
+
+    return DefensePolicy(
+        rules=rules,
+        gate_min_score=gate_min_score,
+        gate_fail_on=gate_fail_on,
+    )

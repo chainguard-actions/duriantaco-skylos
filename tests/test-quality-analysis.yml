@@ -1,0 +1,92 @@
+name: Test quality analysis
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file with quality issues
+        run: |
+          mkdir -p /tmp/skylos-quality-target
+          cat > /tmp/skylos-quality-target/complex_code.py << 'EOF'
+          def overly_complex_function(a, b, c, d, e, f, g):
+              """Function with too many arguments and complex logic."""
+              if a:
+                  if b:
+                      if c:
+                          if d:
+                              if e:
+                                  if f:
+                                      return g
+                                  else:
+                                      return f
+                              else:
+                                  return e
+                          else:
+                              return d
+                      else:
+                          return c
+                  else:
+                      return b
+              else:
+                  return a
+
+          def another_complex_function(x, y, z, w, v, u, t):
+              """Another function with too many parameters."""
+              result = 0
+              for i in range(x):
+                  for j in range(y):
+                      for k in range(z):
+                          result += i + j + k
+              return result
+
+          if __name__ == "__main__":
+              print(overly_complex_function(1, 2, 3, 4, 5, 6, 7))
+              print(another_complex_function(2, 3, 4, 5, 6, 7, 8))
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: /tmp/skylos-quality-target
+          mode: scan
+          analysis: quality
+          confidence: "60"
+
+      - name: Assert outputs are set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: all outputs are set"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking report: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at $REPORT"
+            exit 1
+          fi
+          python3 -c "
+          import json
+          data = json.load(open('$REPORT'))
+          print('Report keys:', list(data.keys()))
+          total = sum(len(v) for v in data.values() if isinstance(v, list))
+          print('Total quality findings:', total)
+          "
+          echo "PASS: quality analysis report is valid JSON"

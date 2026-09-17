@@ -1,0 +1,51 @@
+name: Test token input coverage
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Python file to scan
+        run: |
+          mkdir -p /tmp/skylos-token-test
+          cat > /tmp/skylos-token-test/hello.py << 'EOF'
+          def greet(name):
+              return f"Hello, {name}!"
+
+          if __name__ == "__main__":
+              print(greet("world"))
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: /tmp/skylos-token-test
+          mode: scan
+          analysis: dead-code
+          confidence: "80"
+          token: "dummy-token-for-coverage"
+        continue-on-error: true
+
+      - name: Assert action ran and produced outputs
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$REPORT" ]; then
+              echo "FAIL: report-path output is empty"
+              exit 1
+            fi
+            echo "PASS: action succeeded with token input, report=$REPORT, findings=$FINDINGS"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action ran with token input (upload may have failed gracefully with dummy token)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

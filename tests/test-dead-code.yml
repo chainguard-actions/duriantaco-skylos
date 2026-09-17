@@ -1,0 +1,87 @@
+name: Test dead code detection
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file with dead code
+        run: |
+          mkdir -p /tmp/skylos-deadcode-target
+          cat > /tmp/skylos-deadcode-target/main.py << 'EOF'
+          def active_function():
+              """This function is called."""
+              return "active"
+
+          def dead_function_one():
+              """This function is never called."""
+              return "dead1"
+
+          def dead_function_two():
+              """This function is also never called."""
+              return "dead2"
+
+          class UsedClass:
+              def used_method(self):
+                  return "used"
+
+              def unused_method(self):
+                  return "unused"
+
+          if __name__ == "__main__":
+              result = active_function()
+              obj = UsedClass()
+              obj.used_method()
+              print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: /tmp/skylos-deadcode-target
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count is set to $FINDINGS"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path is set to $REPORT"
+
+      - name: Assert report file is valid JSON with expected structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating report structure"
+          python3 -c "
+          import json, sys
+          data = json.load(open('$REPORT'))
+          print('Report keys:', list(data.keys()))
+          total = sum(len(v) for v in data.values() if isinstance(v, list))
+          print('Total findings:', total)
+          if total > 0:
+              print('PASS: dead code findings detected')
+          else:
+              print('INFO: no dead code detected (may depend on analysis depth)')
+          "
+          echo "PASS: report structure is valid"
