@@ -1,0 +1,72 @@
+name: Test gate mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: "tests/fixtures/sample"
+          mode: "gate"
+          analysis: "dead-code security"
+          confidence: "60"
+        continue-on-error: true
+
+      - name: Assert gate-passed output is set
+        env:
+          GATE: ${{ steps.action.outputs.gate-passed }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE"
+          # In gate mode, gate-passed must be either true or false
+          if [ "$OUTCOME" = "success" ]; then
+            if [ "$GATE" != "true" ]; then
+              echo "FAIL: action succeeded but gate-passed is not 'true', got '$GATE'"
+              exit 1
+            fi
+            echo "PASS: gate passed with no blocking findings"
+          elif [ "$OUTCOME" = "failure" ]; then
+            if [ "$GATE" != "false" ]; then
+              echo "FAIL: action failed but gate-passed is not 'false', got '$GATE'"
+              exit 1
+            fi
+            echo "PASS: gate correctly failed with findings present"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report exists at $REPORT"

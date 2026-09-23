@@ -1,0 +1,51 @@
+name: Test security-only analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: "tests/fixtures/sample"
+          mode: "scan"
+          analysis: "security"
+          confidence: "80"
+
+      - name: Assert findings-count output is a number
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS (valid integer)"
+
+      - name: Assert report-path output points to a valid JSON file
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          # Validate it is valid JSON
+          if ! python3 -c "import json, sys; json.load(open(sys.argv[1]))" "$REPORT"; then
+            echo "FAIL: report file is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: report is valid JSON at $REPORT"
