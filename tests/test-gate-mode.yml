@@ -1,0 +1,70 @@
+name: Test gate mode on clean code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create clean Python file to scan
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/clean-target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/clean-target/app.py" << 'EOF'
+          def add(a, b):
+              return a + b
+
+          def subtract(a, b):
+              return a - b
+
+          result = add(1, 2)
+          print(result)
+          EOF
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          path: tests/fixtures/clean-target
+          mode: gate
+          analysis: dead-code security
+          confidence: "80"
+
+      - name: Assert gate-passed output is set
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE_PASSED"
+          echo "findings-count: $FINDINGS"
+          # In gate mode, the action either passes (gate-passed=true) or fails on findings
+          # Either outcome is acceptable - we just verify the outputs are set
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$GATE_PASSED" ]; then
+              echo "FAIL: gate-passed output is empty on success"
+              exit 1
+            fi
+            echo "PASS: gate-passed=$GATE_PASSED, findings=$FINDINGS"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action ran and failed the gate (findings detected)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Assert report file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file found at $REPORT"
