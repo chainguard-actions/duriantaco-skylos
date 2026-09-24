@@ -16,20 +16,13 @@ Action **duriantaco--skylos/v4.36.0** was hardened automatically. 1 finding(s) w
 
 ### script-injection (severity: high)
 
-Sub-rule (a): The 'Install Skylos' step directly interpolates `${{ github.action_path }}` inside a `run:` shell command string: `python -m pip install "${{ github.action_path }}"`.
+Sub-rule (a): The 'Install Skylos' step directly interpolates `${{ github.action_path }}` inside a `run:` shell command string: `run: python -m pip install "${{ github.action_path }}"`.
 
-Any `${{ ... }}` expression interpolated directly in a `run:` block is a script-injection risk because the value is substituted into the shell command string before the shell parses it. Even though `github.action_path` is typically controlled by GitHub, the rule requires that no `${{ ... }}` expression appear directly inside a `run:` block.
-
-Fix: Move the value into an `env:` variable and reference it as a quoted shell variable:
-```yaml
-env:
-  ACTION_PATH: ${{ github.action_path }}
-run: python -m pip install "$ACTION_PATH"
-```
+Any `${{ ... }}` expression interpolated directly into a `run:` block is a script-injection risk because the value is substituted by the GitHub Actions template engine before the shell ever sees it, bypassing shell quoting. The safe pattern is to route the value through an `env:` variable (as the 'Build Skylos Go engine' step already does correctly with `SKYLOS_ACTION_PATH: ${{ github.action_path }}`) and then reference it as `"$SKYLOS_ACTION_PATH"` inside the `run:` block.
 
 Locations:
 
-- `action.yml:97`
+- `action.yml:86`
 
 ## Iteration Notes
 
@@ -39,5 +32,5 @@ Locations:
 
 **Notes:**
 
-Fixed the script-injection finding in the 'Install Skylos' step of action.yml. Moved `${{ github.action_path }}` from the `run:` block into an `env:` variable `ACTION_PATH: ${{ github.action_path }}`, and updated the shell command from `python -m pip install "${{ github.action_path }}"` to `python -m pip install "$ACTION_PATH"`. This prevents the GitHub Actions expression from being interpolated directly into the shell command string.
+Fixed the 'Install Skylos' step in hardened/action/action.yml (line 86): moved `${{ github.action_path }}` out of the `run:` shell string and into an `env:` block as `SKYLOS_ACTION_PATH: ${{ github.action_path }}`, then referenced it as `"$SKYLOS_ACTION_PATH"` in the run command. This follows the same safe pattern already used in the 'Build Skylos Go engine' step.
 
