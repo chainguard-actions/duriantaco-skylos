@@ -75,7 +75,7 @@ runs:
           -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
           "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
     - name: Set up Python
-      uses: chainguard-actions/actions-setup-python@dd052e5c5dab2904ad7eb4269de4b984d6832943
+      uses: chainguard-actions/actions-setup-python@ace3254bb5011efbd0650a7120a0441ebd1f9400
       with:
         python-version: ${{ inputs.python-version }}
     - name: Detect Go sources
@@ -92,7 +92,7 @@ runs:
         fi
     - name: Set up Go
       if: steps.go_sources.outputs.present == 'true'
-      uses: chainguard-actions/actions-setup-go@c52ddb6d80ab5d5686e0574bb2887bda64cfcc6c
+      uses: chainguard-actions/actions-setup-go@320f6f2294d8e82641a27424fb8def0a2a1e80e6
       with:
         go-version: "1.22.x"
         cache: false
@@ -337,7 +337,7 @@ runs:
         fi
     - name: Upload Report Artifact
       if: always() && inputs.image == ''
-      uses: chainguard-actions/actions-upload-artifact@ae6fbddde3b6b879793bec6dd9a74a07077fe200
+      uses: chainguard-actions/actions-upload-artifact@61ae9717c37cd5ac5fcaa5599c0dab961d043ecc
       with:
         name: skylos-report
         path: skylos-report.json
@@ -345,7 +345,7 @@ runs:
         retention-days: 30
     - name: Upload Image Report Artifact
       if: always() && inputs.image != '' && steps.image_scan.outputs.report != ''
-      uses: chainguard-actions/actions-upload-artifact@ae6fbddde3b6b879793bec6dd9a74a07077fe200
+      uses: chainguard-actions/actions-upload-artifact@61ae9717c37cd5ac5fcaa5599c0dab961d043ecc
       with:
         name: skylos-image-report
         path: ${{ steps.image_scan.outputs.report }}
