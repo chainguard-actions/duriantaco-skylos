@@ -63,7 +63,7 @@ runs:
           -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
           "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
     - name: Set up Python
-      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      uses: chainguard-actions/actions-setup-python@ace3254bb5011efbd0650a7120a0441ebd1f9400
       with:
         python-version: ${{ inputs.python-version }}
     - name: Install Skylos
@@ -84,21 +84,21 @@ runs:
         echo "report=$REPORT" >> "$GITHUB_OUTPUT"
 
         # Build flags from analysis types
-        FLAGS=()
+        FLAGS=""
         if echo "$SKYLOS_ANALYSIS" | grep -q "security"; then
-          FLAGS+=(--danger)
+          FLAGS="$FLAGS --danger"
         fi
         if echo "$SKYLOS_ANALYSIS" | grep -q "quality"; then
-          FLAGS+=(--quality)
+          FLAGS="$FLAGS --quality"
         fi
         if echo "$SKYLOS_ANALYSIS" | grep -q "secrets"; then
-          FLAGS+=(--secrets)
+          FLAGS="$FLAGS --secrets"
         fi
 
         # Run scan
         python -m skylos.cli "$SKYLOS_PATH" \
           --confidence "$SKYLOS_CONFIDENCE" \
-          "${FLAGS[@]}" \
+          $FLAGS \
           --json > "$REPORT" || true
 
         # Count findings
@@ -120,20 +120,20 @@ runs:
         SKYLOS_CONFIDENCE: ${{ inputs.confidence }}
       run: |
         # Upload works with SKYLOS_TOKEN or tokenless via GitHub OIDC
-        FLAGS=()
+        FLAGS=""
         if echo "$SKYLOS_ANALYSIS" | grep -q "security"; then
-          FLAGS+=(--danger)
+          FLAGS="$FLAGS --danger"
         fi
         if echo "$SKYLOS_ANALYSIS" | grep -q "quality"; then
-          FLAGS+=(--quality)
+          FLAGS="$FLAGS --quality"
         fi
         if echo "$SKYLOS_ANALYSIS" | grep -q "secrets"; then
-          FLAGS+=(--secrets)
+          FLAGS="$FLAGS --secrets"
         fi
 
         python -m skylos.cli "$SKYLOS_PATH" \
           --confidence "$SKYLOS_CONFIDENCE" \
-          "${FLAGS[@]}" \
+          $FLAGS \
           --upload || echo "Upload failed (non-fatal)"
     - name: Post GitHub Annotations
       if: always()
@@ -174,7 +174,7 @@ runs:
         fi
     - name: Upload Report Artifact
       if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      uses: chainguard-actions/actions-upload-artifact@61ae9717c37cd5ac5fcaa5599c0dab961d043ecc
       with:
         name: skylos-report
         path: skylos-report.json
