@@ -7,34 +7,43 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Create a simple Python file to scan
+        run: |
+          mkdir -p /tmp/skylos-token-test
+          cat > /tmp/skylos-token-test/sample.py << 'EOF'
+          def unused_function():
+              pass
+
+          def main():
+              x = 1
+              return x
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
       - id: action
         uses: .
         with:
-          path: "."
-          mode: "scan"
-          analysis: "dead-code"
-          confidence: "80"
-          token: "dummy-token-for-testing"
-        continue-on-error: true
+          path: /tmp/skylos-token-test
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+          token: "dummy-token-for-test"
 
-      - name: Assert action ran and produced outputs
+      - name: Assert findings-count output is set
         env:
           FINDINGS: ${{ steps.action.outputs.findings-count }}
           REPORT: ${{ steps.action.outputs.report-path }}
-          OUTCOME: ${{ steps.action.outcome }}
         run: |
-          echo "outcome: $OUTCOME"
           echo "findings-count: $FINDINGS"
           echo "report-path: $REPORT"
-          if [ "$OUTCOME" = "success" ]; then
-            if [ -z "$REPORT" ]; then
-              echo "FAIL: report-path output is empty"
-              exit 1
-            fi
-            echo "PASS: action succeeded with token input, report=$REPORT, findings=$FINDINGS"
-          elif [ "$OUTCOME" = "failure" ]; then
-            echo "PASS: action ran (may have failed gracefully due to dummy token or scan issues)"
-          else
-            echo "FAIL: unexpected outcome '$OUTCOME'"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
             exit 1
           fi
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: token input accepted, findings-count=$FINDINGS, report-path=$REPORT"

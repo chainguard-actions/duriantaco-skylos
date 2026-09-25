@@ -16,11 +16,11 @@ Action **duriantaco--skylos/v4.36.1** was hardened automatically. 1 finding(s) w
 
 ### script-injection (severity: high)
 
-Sub-rule (a): A GitHub Actions expression `${{ github.action_path }}` is interpolated directly inside a `run:` shell command string in the 'Install Skylos' step. The offending line is: `run: python -m pip install "${{ github.action_path }}"`. Even though `github.action_path` is GitHub-controlled, any `${{ ... }}` expression directly inside a `run:` block is a script-injection risk because the value flows through YAML template substitution before the shell ever sees it, bypassing shell quoting protections. The fix is to pass the value via an `env:` variable and reference it as `"$ENV_VAR"` in the shell script.
+Sub-rule (a): A ${{ }} expression is interpolated directly inside a run: shell command string in the 'Install Skylos' step. The line `python -m pip install "${{ github.action_path }}"` embeds the github.action_path context value directly into the shell command before the shell ever sees it. Per the check rules, any ${{ ... }} directly inside a run: script is a script-injection finding regardless of which context it reads from. The fix is to route the value through an env: variable (e.g., `ACTION_PATH: ${{ github.action_path }}`) and reference `"$ACTION_PATH"` in the run: block instead.
 
 Locations:
 
-- `action.yml:64`
+- `action.yml:76`
 
 ## Iteration Notes
 
@@ -30,5 +30,5 @@ Locations:
 
 **Notes:**
 
-Fixed the 'Install Skylos' step in hardened/action/action.yml (line 64): moved `${{ github.action_path }}` out of the `run:` shell command and into an `env:` block as `SKYLOS_ACTION_PATH`, then referenced it as `"$SKYLOS_ACTION_PATH"` in the shell script. This eliminates the YAML template substitution bypass that constituted the script-injection risk.
+Fixed the 'Install Skylos' step in action.yml (line 76): moved `${{ github.action_path }}` out of the `run:` shell command into an `env:` block as `ACTION_PATH: ${{ github.action_path }}`, then updated the shell command to use `"$ACTION_PATH"` instead of the inline expression.
 
