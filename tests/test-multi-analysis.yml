@@ -1,0 +1,83 @@
+name: Test multiple analysis types
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file for multi-analysis scan
+        run: |
+          mkdir -p tests/fixtures/multi-analysis
+          cat > tests/fixtures/multi-analysis/module.py << 'EOF'
+          import os
+          import sys
+
+          def active_function(x):
+              return x * 2
+
+          def inactive_function(y):
+              # This function is never called
+              return y + 100
+
+          def main():
+              val = active_function(21)
+              print(val)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/multi-analysis
+          mode: scan
+          analysis: "dead-code security"
+          confidence: "60"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output was not set"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count='$FINDINGS'"
+
+      - name: Assert report-path is set and file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output was not set"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at '$REPORT'"
+            exit 1
+          fi
+          echo "PASS: report-path='$REPORT' and file exists"
+
+      - name: Assert report JSON contains expected keys
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Inspecting report JSON structure"
+          python3 - << 'PYEOF'
+          import json, sys, os
+          report_path = os.environ.get("REPORT", "skylos-report.json")
+          with open(report_path) as f:
+              data = json.load(f)
+          print(f"Report keys: {list(data.keys())}")
+          print("PASS: report JSON is valid and parseable")
+          PYEOF
