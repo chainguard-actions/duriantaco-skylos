@@ -10,12 +10,11 @@ jobs:
       - id: action
         uses: .
         with:
-          path: "."
-          mode: "scan"
-          analysis: "dead-code"
+          path: .
+          mode: scan
+          analysis: dead-code
           confidence: "80"
-          token: "test-token-value"
-          python-version: "3.11"
+          token: "dummy-token-for-test"
 
       - name: Assert findings-count output is set
         env:
@@ -32,4 +31,4 @@ jobs:
             echo "FAIL: report-path output is empty"
             exit 1
           fi
-          echo "PASS: token input accepted and outputs produced"
+          echo "PASS: token input accepted, findings-count=$FINDINGS, report-path=$REPORT"
