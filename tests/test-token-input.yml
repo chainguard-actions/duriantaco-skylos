@@ -7,13 +7,27 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Create minimal Python fixture
+        run: |
+          mkdir -p /tmp/skylos-token-test
+          cat > /tmp/skylos-token-test/sample.py << 'EOF'
+          def unused_function():
+              pass
+
+          def main():
+              x = 1
+              return x
+
+          main()
+          EOF
+
       - id: action
         uses: .
         with:
-          path: "."
-          mode: "scan"
-          analysis: "dead-code"
-          confidence: "80"
+          path: /tmp/skylos-token-test
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
           token: "dummy-token-for-coverage"
 
       - name: Assert findings-count output is set
@@ -31,4 +45,4 @@ jobs:
             echo "FAIL: report-path output is empty"
             exit 1
           fi
-          echo "PASS: token input accepted, outputs are set"
+          echo "PASS: outputs are set (findings=$FINDINGS, report=$REPORT)"

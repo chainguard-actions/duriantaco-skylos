@@ -10,28 +10,28 @@
 
 **Harden Agent Version:** `2`
 
-Action **duriantaco--skylos/v4.31.1** was hardened automatically. 1 finding(s) were identified and resolved across 2 iteration(s).
+Action **duriantaco--skylos/v4.31.1** was hardened automatically. 2 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Sub-rule (a): The 'Install Skylos' step directly interpolates `${{ github.action_path }}` inside a `run:` shell command string: `run: python -m pip install "${{ github.action_path }}"`.
+Sub-rule (a): The 'Install Skylos' step interpolates `${{ github.action_path }}` directly inside a `run:` shell command string: `run: python -m pip install "${{ github.action_path }}"`.
 
-Any `${{ ... }}` expression interpolated directly into a `run:` block is a script-injection risk because the value is substituted into the shell command string before the shell parses it. The safe pattern is to pass the value via an `env:` variable and reference it as a quoted shell variable (e.g., `"$ACTION_PATH"`).
-
-Fix example:
-```yaml
-- name: Install Skylos
-  shell: bash
-  env:
-    ACTION_PATH: ${{ github.action_path }}
-  run: python -m pip install "$ACTION_PATH"
-```
+Any `${{ ... }}` expression directly inside a `run:` block is a script-injection risk because the value is substituted into the shell command string before the shell parses it. Even though `github.action_path` is typically GitHub-controlled, the rules require that no `${{ ... }}` expression appear inside a `run:` block. The safe pattern is to pass the value via an `env:` variable and reference it as `"$ENV_VAR"` in the script.
 
 Locations:
 
-- `action.yml:55`
+- `action.yml:59`
+
+### script-injection (severity: high)
+
+Sub-rule (b): In both the 'Run Skylos Scan' step (line 91) and the 'Upload to Skylos Dashboard' step (line 130), the shell variable `$FLAGS` is used unquoted in the `python -m skylos.cli` invocation: `$FLAGS \`. `$FLAGS` is built from `$SKYLOS_ANALYSIS`, which is sourced from `inputs.analysis` — a workflow-controllable input. Unquoted shell variable expansion allows the shell to parse metacharacters (`;`, `|`, `&`, whitespace, glob chars) out of the value. The safe pattern is to use an array (`FLAGS=(); FLAGS+=(--danger)`) and expand it as `"${FLAGS[@]}"`.
+
+Locations:
+
+- `action.yml:91`
+- `action.yml:130`
 
 ## Iteration Notes
 
@@ -41,13 +41,8 @@ Locations:
 
 **Notes:**
 
-Fixed script injection in the 'Install Skylos' step of action.yml (line 55). Moved `${{ github.action_path }}` out of the `run:` shell string and into an `env:` block as `ACTION_PATH`. The shell command now uses the quoted variable `"$ACTION_PATH"` instead of the direct expression interpolation.
-
-### Iteration 1
-
-**Fixes applied:** script-injection
-
-**Notes:**
-
-Fixed unquoted `$FLAGS` expansion in two `run:` blocks in action.yml. Converted `FLAGS` from a string variable (with string concatenation and unquoted `$FLAGS` expansion) to a bash array (using `FLAGS=()`, `FLAGS+=(--flag)` appending, and `"${FLAGS[@]}"` expansion) in both the 'Run Skylos Scan' step and the 'Upload to Skylos Dashboard' step. This eliminates word splitting and glob expansion risks while correctly passing each flag as a separate shell argument.
+Fixed three script-injection issues in hardened/action/action.yml:
+1. 'Install Skylos' step (line 59): Moved `${{ github.action_path }}` into an `env:` block as `ACTION_PATH` and referenced it as `"$ACTION_PATH"` in the run command.
+2. 'Run Skylos Scan' step (line 91): Converted `FLAGS` string variable with unquoted `$FLAGS` expansion to a bash array (`FLAGS=()`, `FLAGS+=(--flag)`) expanded safely as `"${FLAGS[@]}"`.
+3. 'Upload to Skylos Dashboard' step (line 130): Same bash array conversion applied, replacing unquoted `$FLAGS` with `"${FLAGS[@]}"`.
 
