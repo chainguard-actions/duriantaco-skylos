@@ -1,4 +1,4 @@
-name: Test token input
+name: Test token input coverage
 on:
   workflow_dispatch:
 jobs:
