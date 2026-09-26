@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clean-python-fixture"
+version = "0.1.0"
+
+[tool.skylos.gate]
+fail_on_critical = false
+max_security = 100
+max_quality = 100
+max_dead_code = 100
+max_secrets = 100
+max_dependency_vulnerabilities = 100

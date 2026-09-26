@@ -1,4 +1,4 @@
-name: Test security-only analysis
+name: Test basic scan mode
 on:
   workflow_dispatch:
 
@@ -11,10 +11,10 @@ jobs:
       - id: action
         uses: .
         with:
-          path: tests/fixtures/security-python
+          path: tests/fixtures/sample-python
           mode: scan
-          analysis: security
-          confidence: "50"
+          analysis: dead-code security
+          confidence: "60"
 
       - name: Assert findings-count output is set
         env:
@@ -27,6 +27,17 @@ jobs:
           fi
           echo "PASS: findings-count is set to '$FINDINGS'"
 
+      - name: Assert findings-count is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count is a valid non-negative integer: $FINDINGS"
+
       - name: Assert report-path output is set
         env:
           REPORT: ${{ steps.action.outputs.report-path }}
@@ -38,17 +49,24 @@ jobs:
           fi
           echo "PASS: report-path is set to '$REPORT'"
 
-      - name: Assert report file exists and is valid JSON
+      - name: Assert report file exists
         env:
           REPORT: ${{ steps.action.outputs.report-path }}
         run: |
-          echo "Checking report file: $REPORT"
+          echo "Checking for report file: $REPORT"
           if [ ! -f "$REPORT" ]; then
             echo "FAIL: report file does not exist at $REPORT"
             exit 1
           fi
+          echo "PASS: report file exists"
+
+      - name: Assert report is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating JSON in: $REPORT"
           if ! python3 -c "import json; json.load(open('$REPORT'))" 2>&1; then
             echo "FAIL: report is not valid JSON"
             exit 1
           fi
-          echo "PASS: report file exists and is valid JSON"
+          echo "PASS: report is valid JSON"

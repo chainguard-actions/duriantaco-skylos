@@ -1,4 +1,4 @@
-name: Test security-only analysis
+name: Test gate mode with clean code
 on:
   workflow_dispatch:
 
@@ -11,10 +11,21 @@ jobs:
       - id: action
         uses: .
         with:
-          path: tests/fixtures/security-python
-          mode: scan
-          analysis: security
-          confidence: "50"
+          path: tests/fixtures/clean-python
+          mode: gate
+          analysis: dead-code security
+          confidence: "60"
+
+      - name: Assert gate-passed is true
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: $GATE_PASSED"
+          if [ "$GATE_PASSED" != "true" ]; then
+            echo "FAIL: expected gate-passed=true but got '$GATE_PASSED'"
+            exit 1
+          fi
+          echo "PASS: gate-passed is true"
 
       - name: Assert findings-count output is set
         env:
@@ -25,7 +36,7 @@ jobs:
             echo "FAIL: findings-count output was not set"
             exit 1
           fi
-          echo "PASS: findings-count is set to '$FINDINGS'"
+          echo "PASS: findings-count is '$FINDINGS'"
 
       - name: Assert report-path output is set
         env:
@@ -36,19 +47,4 @@ jobs:
             echo "FAIL: report-path output was not set"
             exit 1
           fi
-          echo "PASS: report-path is set to '$REPORT'"
-
-      - name: Assert report file exists and is valid JSON
-        env:
-          REPORT: ${{ steps.action.outputs.report-path }}
-        run: |
-          echo "Checking report file: $REPORT"
-          if [ ! -f "$REPORT" ]; then
-            echo "FAIL: report file does not exist at $REPORT"
-            exit 1
-          fi
-          if ! python3 -c "import json; json.load(open('$REPORT'))" 2>&1; then
-            echo "FAIL: report is not valid JSON"
-            exit 1
-          fi
-          echo "PASS: report file exists and is valid JSON"
+          echo "PASS: report-path is '$REPORT'"
