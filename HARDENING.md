@@ -16,24 +16,11 @@ Action **duriantaco--skylos/v4.35.0** was hardened automatically. 1 finding(s) w
 
 ### script-injection (severity: high)
 
-Sub-rule (a): The 'Install Skylos' step directly interpolates `${{ github.action_path }}` inside a `run:` shell command string: `run: python -m pip install "${{ github.action_path }}"`.
-
-Any `${{ ... }}` expression directly inside a `run:` script is a script-injection risk — the expression is substituted by the YAML template engine before the shell ever sees it, bypassing shell quoting. The value should be passed via an `env:` variable and referenced as `"$ENV_VAR"` instead.
-
-Sub-rule (b): In both the 'Run Skylos Scan' step and the 'Upload to Skylos Dashboard' step, the `$FLAGS` variable (built from `$SKYLOS_ANALYSIS`, which is sourced from `inputs.analysis`) is expanded unquoted in the shell command:
-```
-python -m skylos.cli "$SKYLOS_PATH" \
-  --confidence "$SKYLOS_CONFIDENCE" \
-  $FLAGS \
-  --json > "$REPORT"
-```
-An unquoted shell variable expansion allows the shell to parse metacharacters (`;`, `|`, `&`, `$(...)`, whitespace, glob chars) out of the value. `$FLAGS` should be double-quoted: `"$FLAGS"`.
+Sub-rule (a): The 'Install Skylos' step directly interpolates a ${{ }} expression inside a run: shell command string. The line `run: python -m pip install "${{ github.action_path }}"` embeds `${{ github.action_path }}` directly in the shell command. Per the script-injection check, ANY ${{ ... }} expression directly inside a run: block is a finding — the value is substituted by the GitHub Actions template engine before the shell ever sees it, bypassing shell quoting. The fix is to pass the value via an env: variable and reference it as "$ENV_VAR" in the script.
 
 Locations:
 
-- `action.yml:87`
-- `action.yml:107`
-- `action.yml:147`
+- `action.yml:96`
 
 ## Iteration Notes
 
@@ -43,8 +30,5 @@ Locations:
 
 **Notes:**
 
-Fixed three script-injection issues in action.yml:
-1. 'Install Skylos' step: moved `${{ github.action_path }}` out of the run: shell string into an env: variable `SKYLOS_ACTION_PATH`, referenced as `"$SKYLOS_ACTION_PATH"` in the shell command.
-2. 'Run Skylos Scan' step: converted `FLAGS` from an unquoted string variable to a bash array (`FLAGS=()`), populated with `FLAGS+=("--flag")` conditionals, and expanded safely as `"${FLAGS[@]}"` in the python command.
-3. 'Upload to Skylos Dashboard' step: same bash array treatment applied to `FLAGS` for the upload command.
+Fixed the 'Install Skylos' step in action.yml (line 96): moved `${{ github.action_path }}` from the `run:` shell command into an `env:` block as `SKYLOS_ACTION_PATH`, and updated the shell command to reference it as `"$SKYLOS_ACTION_PATH"`. This prevents the GitHub Actions template engine from substituting the value directly into the shell command string before the shell processes it.
 
