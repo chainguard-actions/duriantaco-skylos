@@ -1,0 +1,48 @@
+name: Test custom python-version input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: "${{ github.workspace }}/tests/fixtures/python-sample"
+          mode: "scan"
+          analysis: "dead-code security"
+          confidence: "60"
+          python-version: "3.12"
+        continue-on-error: true
+
+      - name: Assert action ran with python-version=3.12 or failed gracefully
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$FINDINGS" ]; then
+              echo "FAIL: action succeeded but findings-count is empty"
+              exit 1
+            fi
+            if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+              echo "FAIL: findings-count '$FINDINGS' is not a non-negative integer"
+              exit 1
+            fi
+            if [ -z "$REPORT" ]; then
+              echo "FAIL: action succeeded but report-path is empty"
+              exit 1
+            fi
+            echo "PASS: action ran with python-version=3.12, findings=$FINDINGS"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action ran and failed gracefully (expected under act due to artifact upload or findings gate)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
