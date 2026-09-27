@@ -10,34 +10,17 @@
 
 **Harden Agent Version:** `2`
 
-Action **duriantaco--skylos/v4.22.1** was hardened automatically. 2 finding(s) were identified and resolved across 1 iteration(s).
+Action **duriantaco--skylos/v4.22.1** was hardened automatically. 1 finding(s) were identified and resolved across 2 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Sub-rule (a): The 'Install Skylos' step directly interpolates `${{ github.action_path }}` inside a `run:` shell command string: `run: python -m pip install "${{ github.action_path }}"`.
-
-Any `${{ ... }}` expression interpolated directly into a run: block is a script-injection risk — the value flows through YAML template substitution before the shell ever sees it, bypassing shell quoting. The safe pattern is to use the `$GITHUB_ACTION_PATH` environment variable instead, which is already available as a pre-set env var in composite actions.
+Sub-rule (a): The 'Install Skylos' step directly interpolates the GitHub Actions expression `${{ github.action_path }}` inside a `run:` shell command string. Any `${{ ... }}` expression interpolated directly into a `run:` block is a script-injection risk because the value is substituted into the shell command before the shell parses it. Offending line: `run: python -m pip install "${{ github.action_path }}"`
 
 Locations:
 
-- `action.yml:59`
-
-### script-injection (severity: high)
-
-Sub-rule (b): The variable `$FLAGS` is expanded unquoted in two `run:` blocks. `$FLAGS` is built from `$SKYLOS_ANALYSIS`, which is sourced from `inputs.analysis` (an attacker-controllable input via the `env:` block). An unquoted shell expansion allows the shell to parse metacharacters (`;`, `|`, `&`, `$(...)`, whitespace, glob chars) out of the value, enabling command injection.
-
-Offending lines:
-- 'Run Skylos Scan' step: `          $FLAGS \`
-- 'Upload to Skylos Dashboard' step: `          $FLAGS \`
-
-Fix: quote the expansion as `"$FLAGS"`.
-
-Locations:
-
-- `action.yml:88`
-- `action.yml:117`
+- `action.yml:55`
 
 ## Iteration Notes
 
@@ -47,8 +30,13 @@ Locations:
 
 **Notes:**
 
-Fixed three script-injection issues in hardened/action/action.yml:
-1. 'Install Skylos' step (line 59): Replaced `${{ github.action_path }}` with `$GITHUB_ACTION_PATH` to avoid YAML template substitution before shell execution.
-2. 'Run Skylos Scan' step (line 88): Converted string-based `FLAGS` variable to a bash array (`FLAGS=()`/`FLAGS+=("--flag")`/`"${FLAGS[@]}"`), preventing shell metacharacter injection from the attacker-controllable `inputs.analysis` input while preserving correct multi-argument expansion.
-3. 'Upload to Skylos Dashboard' step (line 117): Applied the same bash array fix for `FLAGS` as in the scan step.
+Fixed script injection in the 'Install Skylos' step (action.yml line 55): moved `${{ github.action_path }}` from the `run:` shell command string into the step's `env:` block as `ACTION_PATH`, and updated the shell command to reference it as `"$ACTION_PATH"` instead of `"${{ github.action_path }}"`.
+
+### Iteration 2
+
+**Fixes applied:** script-injection
+
+**Notes:**
+
+Fixed unquoted $FLAGS variable expansion in two steps ('Run Skylos Scan' at line 90 and 'Upload to Skylos Dashboard' at line 116). Changed FLAGS from a string variable to a bash array (FLAGS=()), with each flag appended as a separate element (FLAGS+=("--danger") etc.), and expanded safely with "${FLAGS[@]}". This prevents word splitting and glob expansion while correctly passing multiple flags as distinct arguments.
 
