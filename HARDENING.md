@@ -10,13 +10,15 @@
 
 **Harden Agent Version:** `2`
 
-Action **duriantaco--skylos/v4.22.1** was hardened automatically. 3 finding(s) were identified and resolved across 1 iteration(s).
+Action **duriantaco--skylos/v4.22.1** was hardened automatically. 2 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Rule (a) violation: The 'Install Skylos' step directly interpolates `${{ github.action_path }}` inside a `run:` shell command string: `run: python -m pip install "${{ github.action_path }}"`. Any `${{ ... }}` expression inside a `run:` block is a script-injection risk because the value is substituted into the shell command before the shell parses it.
+Sub-rule (a): The 'Install Skylos' step directly interpolates `${{ github.action_path }}` inside a `run:` shell command string: `run: python -m pip install "${{ github.action_path }}"`.
+
+Any `${{ ... }}` expression interpolated directly into a run: block is a script-injection risk — the value flows through YAML template substitution before the shell ever sees it, bypassing shell quoting. The safe pattern is to use the `$GITHUB_ACTION_PATH` environment variable instead, which is already available as a pre-set env var in composite actions.
 
 Locations:
 
@@ -24,19 +26,18 @@ Locations:
 
 ### script-injection (severity: high)
 
-Rule (b) violation: In the 'Run Skylos Scan' step, the shell variable `$FLAGS` is expanded **unquoted** in the `python -m skylos.cli` invocation (`$FLAGS \`). `$FLAGS` is built from `$SKYLOS_ANALYSIS`, which is sourced from `inputs.analysis` (a workflow-controllable input). An unquoted expansion allows shell metacharacter injection (`;`, `|`, `&`, `$(...)`, etc.) if the input contains such characters.
+Sub-rule (b): The variable `$FLAGS` is expanded unquoted in two `run:` blocks. `$FLAGS` is built from `$SKYLOS_ANALYSIS`, which is sourced from `inputs.analysis` (an attacker-controllable input via the `env:` block). An unquoted shell expansion allows the shell to parse metacharacters (`;`, `|`, `&`, `$(...)`, whitespace, glob chars) out of the value, enabling command injection.
+
+Offending lines:
+- 'Run Skylos Scan' step: `          $FLAGS \`
+- 'Upload to Skylos Dashboard' step: `          $FLAGS \`
+
+Fix: quote the expansion as `"$FLAGS"`.
 
 Locations:
 
 - `action.yml:88`
-
-### script-injection (severity: high)
-
-Rule (b) violation: In the 'Upload to Skylos Dashboard' step, the shell variable `$FLAGS` is expanded **unquoted** in the `python -m skylos.cli` invocation (`$FLAGS \`). `$FLAGS` is built from `$SKYLOS_ANALYSIS`, which is sourced from `inputs.analysis` (a workflow-controllable input). An unquoted expansion allows shell metacharacter injection.
-
-Locations:
-
-- `action.yml:124`
+- `action.yml:117`
 
 ## Iteration Notes
 
@@ -46,8 +47,8 @@ Locations:
 
 **Notes:**
 
-Fixed all three script-injection findings in hardened/action/action.yml:
-1. 'Install Skylos' step (line 59): Moved `${{ github.action_path }}` to an env var `ACTION_PATH` and referenced it as `"$ACTION_PATH"` in the run command.
-2. 'Run Skylos Scan' step (line 88): Converted string-based `FLAGS` variable to a bash array (`FLAGS=()`), using `FLAGS+=("--flag")` for additions and `"${FLAGS[@]}"` for safe quoted expansion, eliminating the unquoted `$FLAGS` shell metacharacter injection risk.
-3. 'Upload to Skylos Dashboard' step (line 124): Same bash array fix applied as in finding 2.
+Fixed three script-injection issues in hardened/action/action.yml:
+1. 'Install Skylos' step (line 59): Replaced `${{ github.action_path }}` with `$GITHUB_ACTION_PATH` to avoid YAML template substitution before shell execution.
+2. 'Run Skylos Scan' step (line 88): Converted string-based `FLAGS` variable to a bash array (`FLAGS=()`/`FLAGS+=("--flag")`/`"${FLAGS[@]}"`), preventing shell metacharacter injection from the attacker-controllable `inputs.analysis` input while preserving correct multi-argument expansion.
+3. 'Upload to Skylos Dashboard' step (line 117): Applied the same bash array fix for `FLAGS` as in the scan step.
 
