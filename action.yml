@@ -281,7 +281,7 @@ runs:
         fi
     - name: Upload SARIF to GitHub Code Scanning
       if: ${{ !cancelled() && inputs.image == '' && inputs.upload-sarif == 'true' && steps.scan.outputs.sarif != '' && hashFiles('skylos.sarif') != '' }}
-      uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+      uses: chainguard-actions/github-codeql-action/upload-sarif@05a2b18f97905888db8f883471cc925f1a97a01c # v4.38.2
       with:
         sarif_file: skylos.sarif
         category: ${{ inputs.sarif-category }}
