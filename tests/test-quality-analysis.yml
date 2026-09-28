@@ -1,0 +1,69 @@
+name: Test quality analysis type
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python fixture for quality analysis
+        run: |
+          mkdir -p /tmp/skylos-quality
+          cat > /tmp/skylos-quality/utils.py << 'EOF'
+          def calculate(x, y, z, a, b, c, d, e):
+              """Function with many parameters - quality issue."""
+              total = x + y + z + a + b + c + d + e
+              if total > 100:
+                  if total > 200:
+                      if total > 300:
+                          return "very high"
+                      return "high"
+                  return "medium"
+              return "low"
+
+          def simple():
+              return 42
+
+          result = simple()
+          print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/skylos-quality"
+          mode: "scan"
+          analysis: "quality"
+          confidence: "60"
+
+      - name: Assert findings-count output is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path is set and file is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          python3 -c "import json; data=json.load(open('$REPORT')); print('PASS: valid JSON with keys:', list(data.keys()))"

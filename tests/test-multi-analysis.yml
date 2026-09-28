@@ -1,0 +1,81 @@
+name: Test multiple analysis types combined
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python fixture for multi-analysis
+        run: |
+          mkdir -p /tmp/skylos-multi
+          cat > /tmp/skylos-multi/module.py << 'EOF'
+          import os
+          import subprocess
+
+          def active_function(data):
+              """Used function."""
+              return str(data)
+
+          def unused_helper():
+              """This function is never called."""
+              return "unused"
+
+          def run_shell(cmd):
+              """Potentially dangerous shell execution."""
+              return subprocess.run(cmd, shell=True, capture_output=True)
+
+          output = active_function(42)
+          print(output)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/skylos-multi"
+          mode: "scan"
+          analysis: "dead-code security quality"
+          confidence: "60"
+
+      - name: Assert findings-count output is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          python3 -c "
+          import json
+          data = json.load(open('$REPORT'))
+          count = sum(len(v) for v in data.values() if isinstance(v, list))
+          print(f'PASS: report valid JSON, total list items across keys: {count}')
+          "
