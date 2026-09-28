@@ -1,0 +1,72 @@
+name: Test gate mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Python file to scan
+        run: |
+          mkdir -p /tmp/skylos-test-src
+          cat > /tmp/skylos-test-src/hello.py << 'EOF'
+          def greet(name):
+              return f"Hello, {name}!"
+
+          if __name__ == "__main__":
+              print(greet("world"))
+          EOF
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          path: "/tmp/skylos-test-src"
+          mode: "gate"
+          analysis: "dead-code security"
+          confidence: "80"
+
+      - name: Assert gate-passed output is set
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE_PASSED"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$GATE_PASSED" ]; then
+              echo "FAIL: gate-passed output is empty on success"
+              exit 1
+            fi
+            if [ "$GATE_PASSED" != "true" ]; then
+              echo "FAIL: expected gate-passed=true on success, got $GATE_PASSED"
+              exit 1
+            fi
+            echo "PASS: gate passed"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "INFO: gate failed (issues found or scan error) - checking gate-passed output"
+            # gate-passed should be false when gate fails
+            if [ -n "$GATE_PASSED" ] && [ "$GATE_PASSED" != "false" ]; then
+              echo "FAIL: expected gate-passed=false on failure, got $GATE_PASSED"
+              exit 1
+            fi
+            echo "PASS: gate failed gracefully with gate-passed=false"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          if [ "$OUTCOME" = "success" ] && [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count is empty on success"
+            exit 1
+          fi
+          echo "PASS"

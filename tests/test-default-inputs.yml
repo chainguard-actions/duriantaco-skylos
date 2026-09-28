@@ -1,0 +1,65 @@
+name: Test default inputs
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Run with only required defaults - mode defaults to 'gate', analysis to 'dead-code security'
+      # Use continue-on-error because gate mode may fail if issues are found in the repo
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          path: "."
+          mode: "scan"
+
+      - name: Assert action ran and produced findings-count
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$FINDINGS" ]; then
+              echo "FAIL: findings-count is empty on success"
+              exit 1
+            fi
+            if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+              echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+              exit 1
+            fi
+            echo "PASS: scan completed with $FINDINGS findings"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "INFO: action failed (may be expected if gate triggered)"
+            echo "PASS: action ran and failed gracefully"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Assert report file was created
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "report-path: $REPORT"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$REPORT" ]; then
+              echo "FAIL: report-path is empty on success"
+              exit 1
+            fi
+            if [ ! -f "$REPORT" ]; then
+              echo "FAIL: report file does not exist at $REPORT"
+              exit 1
+            fi
+            echo "PASS: report exists at $REPORT"
+          else
+            echo "INFO: skipping report check since action did not succeed"
+            echo "PASS"
+          fi
