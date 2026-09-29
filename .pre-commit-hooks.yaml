@@ -1,0 +1,17 @@
+- id: skylos-scan
+  name: skylos (report only)
+  entry: skylos
+  language: python
+  types_or: [python]
+  pass_filenames: false
+  require_serial: true
+  args: [".", "--json", "--confidence", "70", "--danger"]
+
+- id: skylos-defend
+  name: skylos AI defense gate
+  entry: skylos
+  language: python
+  types_or: [python]
+  pass_filenames: false
+  require_serial: true
+  args: ["defend", ".", "--fail-on", "critical"]

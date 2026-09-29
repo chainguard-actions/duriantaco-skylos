@@ -1,0 +1,62 @@
+name: Test security-only analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: "tests/fixtures"
+          mode: "scan"
+          analysis: "security"
+          confidence: "80"
+        continue-on-error: true
+
+      - name: Assert scan completed with security-only analysis
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: action did not succeed in scan mode with security analysis (outcome=$OUTCOME)"
+            exit 1
+          fi
+
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT"
+
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report file exists on disk
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking report file: $REPORT"
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists"
+
+          # Verify it is valid JSON
+          if ! python3 -c "import json; json.load(open('$REPORT'))" 2>/dev/null; then
+            echo "FAIL: report file is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: report file is valid JSON"
