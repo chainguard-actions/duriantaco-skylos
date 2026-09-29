@@ -10,17 +10,35 @@
 
 **Harden Agent Version:** `2`
 
-Action **duriantaco--skylos/v4.22.1** was hardened automatically. 1 finding(s) were identified and resolved across 2 iteration(s).
+Action **duriantaco--skylos/v4.22.1** was hardened automatically. 3 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Sub-rule (a): The 'Install Skylos' step directly interpolates the GitHub Actions expression `${{ github.action_path }}` inside a `run:` shell command string. Any `${{ ... }}` expression interpolated directly into a `run:` block is a script-injection risk because the value is substituted into the shell command before the shell parses it. Offending line: `run: python -m pip install "${{ github.action_path }}"`
+Sub-rule (a): The 'Install Skylos' step directly interpolates the GitHub Actions expression `${{ github.action_path }}` inside a `run:` shell command string: `run: python -m pip install "${{ github.action_path }}"`.
+
+Any `${{ ... }}` expression interpolated directly into a `run:` block is a script-injection risk because the value is substituted into the shell command string before the shell parses it. Even though `github.action_path` is typically GitHub-controlled, the rule requires that no `${{ ... }}` expression appear directly inside a `run:` block. The fix is to pass the value via an `env:` variable and reference it as `"$ACTION_PATH"` in the script.
 
 Locations:
 
-- `action.yml:55`
+- `action.yml:56`
+
+### script-injection (severity: high)
+
+Sub-rule (b): In the 'Run Skylos Scan' step, the shell variable `$FLAGS` is expanded unquoted in the `python -m skylos.cli` command line (`$FLAGS \`). `$FLAGS` is built by appending literal strings based on grep matches against `$SKYLOS_ANALYSIS`, which is sourced from `inputs.analysis` (user-controlled). Although the grep filtering limits what ends up in `$FLAGS`, the variable is still unquoted, allowing the shell to word-split and glob-expand its contents. The fix is to quote the expansion: `"$FLAGS"`.
+
+Locations:
+
+- `action.yml:75`
+
+### script-injection (severity: high)
+
+Sub-rule (b): In the 'Upload to Skylos Dashboard' step, the shell variable `$FLAGS` is expanded unquoted in the `python -m skylos.cli` command line (`$FLAGS \`). `$FLAGS` is built by appending literal strings based on grep matches against `$SKYLOS_ANALYSIS`, which is sourced from `inputs.analysis` (user-controlled). Although the grep filtering limits what ends up in `$FLAGS`, the variable is still unquoted, allowing the shell to word-split and glob-expand its contents. The fix is to quote the expansion: `"$FLAGS"`.
+
+Locations:
+
+- `action.yml:99`
 
 ## Iteration Notes
 
@@ -30,13 +48,8 @@ Locations:
 
 **Notes:**
 
-Fixed script injection in the 'Install Skylos' step (action.yml line 55): moved `${{ github.action_path }}` from the `run:` shell command string into the step's `env:` block as `ACTION_PATH`, and updated the shell command to reference it as `"$ACTION_PATH"` instead of `"${{ github.action_path }}"`.
-
-### Iteration 2
-
-**Fixes applied:** script-injection
-
-**Notes:**
-
-Fixed unquoted $FLAGS variable expansion in two steps ('Run Skylos Scan' at line 90 and 'Upload to Skylos Dashboard' at line 116). Changed FLAGS from a string variable to a bash array (FLAGS=()), with each flag appended as a separate element (FLAGS+=("--danger") etc.), and expanded safely with "${FLAGS[@]}". This prevents word splitting and glob expansion while correctly passing multiple flags as distinct arguments.
+Fixed all three script-injection findings in hardened/action/action.yml:
+1. 'Install Skylos' step: Moved `${{ github.action_path }}` out of the `run:` block into an `env:` variable `ACTION_PATH`, referenced as `"$ACTION_PATH"` in the shell command.
+2. 'Run Skylos Scan' step: Converted `FLAGS` string variable with unquoted `$FLAGS` expansion to a bash array (`FLAGS=()`), using `FLAGS+=("--flag")` for appending and `"${FLAGS[@]}"` for safe expansion.
+3. 'Upload to Skylos Dashboard' step: Same bash array fix applied to eliminate the unquoted `$FLAGS` expansion.
 

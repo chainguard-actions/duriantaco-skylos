@@ -15,41 +15,16 @@ jobs:
           analysis: "dead-code"
           confidence: "80"
           token: "test-token-value"
-        continue-on-error: true
 
       - name: Assert findings-count output is set
         env:
           FINDINGS: ${{ steps.action.outputs.findings-count }}
-          OUTCOME: ${{ steps.action.outcome }}
+          REPORT: ${{ steps.action.outputs.report-path }}
         run: |
-          echo "outcome: $OUTCOME"
           echo "findings-count: $FINDINGS"
-          if [ "$OUTCOME" = "success" ]; then
-            if [ -z "$FINDINGS" ]; then
-              echo "FAIL: action succeeded but findings-count output is empty"
-              exit 1
-            fi
-            echo "PASS: findings-count=$FINDINGS"
-          elif [ "$OUTCOME" = "failure" ]; then
-            echo "PASS: action ran (may have failed due to upload with test token, which is non-fatal)"
-          else
-            echo "FAIL: unexpected outcome '$OUTCOME'"
+          echo "report-path: $REPORT"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
             exit 1
           fi
-
-      - name: Assert report-path output is set
-        env:
-          REPORT: ${{ steps.action.outputs.report-path }}
-          OUTCOME: ${{ steps.action.outcome }}
-        run: |
-          echo "outcome: $OUTCOME"
-          echo "report-path: $REPORT"
-          if [ "$OUTCOME" = "success" ]; then
-            if [ -z "$REPORT" ]; then
-              echo "FAIL: action succeeded but report-path output is empty"
-              exit 1
-            fi
-            echo "PASS: report-path=$REPORT"
-          else
-            echo "PASS: action ran (token input was accepted)"
-          fi
+          echo "PASS: findings-count=$FINDINGS, report-path=$REPORT"
