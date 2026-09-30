@@ -1,0 +1,63 @@
+name: Test confidence threshold input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file to scan
+        run: |
+          mkdir -p /tmp/skylos-confidence-target
+          cat > /tmp/skylos-confidence-target/module.py << 'EOF'
+          def used_function():
+              """This function is used."""
+              return 42
+
+          def helper():
+              """A helper function."""
+              return used_function()
+
+          if __name__ == "__main__":
+              print(helper())
+          EOF
+
+      - name: Run scan with high confidence threshold (100)
+        id: high_confidence
+        uses: .
+        with:
+          path: "/tmp/skylos-confidence-target"
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "100"
+
+      - name: Assert high-confidence scan produced findings-count
+        env:
+          FINDINGS: ${{ steps.high_confidence.outputs.findings-count }}
+        run: |
+          echo "findings-count (confidence=100): $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not numeric: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS at confidence=100"
+
+      - name: Assert report-path is set for high confidence scan
+        env:
+          REPORT: ${{ steps.high_confidence.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT"
