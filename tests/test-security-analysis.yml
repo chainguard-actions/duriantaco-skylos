@@ -1,0 +1,66 @@
+name: Test security-only analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python fixture with a security pattern
+        run: |
+          mkdir -p /tmp/skylos-security-fixture
+          cat > /tmp/skylos-security-fixture/app.py << 'EOF'
+          import subprocess
+
+          def run_command(user_input):
+              # Potentially unsafe command execution
+              result = subprocess.run(user_input, shell=True, capture_output=True)
+              return result.stdout
+
+          def safe_function():
+              return "safe"
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/skylos-security-fixture"
+          mode: "scan"
+          analysis: "security"
+          confidence: "50"
+
+      - name: Assert outputs are set
+        env:
+          FINDINGS_COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $FINDINGS_COUNT"
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$FINDINGS_COUNT" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS_COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS_COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count is '$FINDINGS_COUNT'"
+
+      - name: Assert report file is valid JSON with expected structure
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking report at: $REPORT_PATH"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file does not exist"
+            exit 1
+          fi
+          python3 - "$REPORT_PATH" << 'PYEOF'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          if not isinstance(data, dict):
+              print("FAIL: report is not a JSON object")
+              sys.exit(1)
+          print(f"PASS: report has keys: {list(data.keys())}")
+          PYEOF

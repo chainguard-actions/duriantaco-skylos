@@ -1,0 +1,55 @@
+name: Test basic scan mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: "."
+          mode: "scan"
+          analysis: "dead-code security"
+          confidence: "60"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS_COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $FINDINGS_COUNT"
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$FINDINGS_COUNT" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count is '$FINDINGS_COUNT'"
+
+      - name: Assert report file exists
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          if [ -z "$REPORT_PATH" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "FAIL: report file does not exist at '$REPORT_PATH'"
+            exit 1
+          fi
+          echo "PASS: report file exists at '$REPORT_PATH'"
+
+      - name: Assert report is valid JSON
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating JSON at: $REPORT_PATH"
+          if ! python3 -c "import json; json.load(open('$REPORT_PATH'))"; then
+            echo "FAIL: report is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: report is valid JSON"

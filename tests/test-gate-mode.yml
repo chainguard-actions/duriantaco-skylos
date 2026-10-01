@@ -1,0 +1,51 @@
+name: Test gate mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Python fixture for scanning
+        run: |
+          mkdir -p /tmp/skylos-fixture
+          cat > /tmp/skylos-fixture/hello.py << 'EOF'
+          def greet(name):
+              return f"Hello, {name}!"
+
+          if __name__ == "__main__":
+              print(greet("world"))
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/skylos-fixture"
+          mode: "gate"
+          analysis: "dead-code security"
+          confidence: "80"
+        continue-on-error: true
+
+      - name: Assert gate-passed output is set
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+          FINDINGS_COUNT: ${{ steps.action.outputs.findings-count }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE_PASSED"
+          echo "findings-count: $FINDINGS_COUNT"
+          # gate-passed must be either true or false (not empty)
+          if [ "$GATE_PASSED" = "true" ] || [ "$GATE_PASSED" = "false" ]; then
+            echo "PASS: gate-passed is '$GATE_PASSED'"
+          else
+            echo "FAIL: gate-passed output is not 'true' or 'false', got: '$GATE_PASSED'"
+            exit 1
+          fi
+          # findings-count must be a non-negative integer
+          if ! echo "$FINDINGS_COUNT" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS_COUNT'"
+            exit 1
+          fi
+          echo "PASS: findings-count is '$FINDINGS_COUNT'"
