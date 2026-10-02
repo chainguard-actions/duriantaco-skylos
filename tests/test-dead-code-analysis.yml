@@ -1,0 +1,79 @@
+name: Test dead-code analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python fixture with dead code
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/dead-code-python"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/dead-code-python/module.py" << 'EOF'
+          def used_function():
+              return "I am used"
+
+          def unused_function():
+              return "I am never called"
+
+          def another_unused():
+              return "Also never called"
+
+          if __name__ == "__main__":
+              print(used_function())
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "tests/fixtures/dead-code-python"
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "50"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path is set and file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists at $REPORT"
+
+      - name: Assert report is valid JSON with expected structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys
+          report_path = os.environ.get("REPORT", "skylos-report.json")
+          with open(report_path) as f:
+              data = json.load(f)
+          if not isinstance(data, dict):
+              print(f"FAIL: report is not a JSON object")
+              sys.exit(1)
+          total = sum(len(v) for v in data.values() if isinstance(v, list))
+          print(f"PASS: report has {total} total findings across {len(data)} categories")
+          PYEOF

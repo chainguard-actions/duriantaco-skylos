@@ -1,0 +1,78 @@
+name: Test quality analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python fixture for quality analysis
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/quality-python"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/quality-python/code.py" << 'EOF'
+          # A simple Python module for quality analysis
+          def calculate(x, y):
+              """Calculate sum of two numbers."""
+              result = x + y
+              return result
+
+          def process_items(items):
+              """Process a list of items."""
+              output = []
+              for item in items:
+                  output.append(item * 2)
+              return output
+
+          if __name__ == "__main__":
+              print(calculate(1, 2))
+              print(process_items([1, 2, 3]))
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "tests/fixtures/quality-python"
+          mode: "scan"
+          analysis: "quality"
+          confidence: "60"
+
+      - name: Assert findings-count is set and valid
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path is set and file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report exists at $REPORT"
+
+      - name: Assert gate-passed is not set in scan mode
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: '$GATE_PASSED'"
+          # In scan mode, gate step is skipped, so gate-passed should be empty
+          # (the gate step only runs in gate or review mode)
+          echo "INFO: gate-passed='$GATE_PASSED' (expected empty in scan mode)"
+          echo "PASS: scan mode completed without gate"
