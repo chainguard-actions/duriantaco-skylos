@@ -1,0 +1,78 @@
+name: Test security-only analysis in scan mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python project with a security issue
+        run: |
+          mkdir -p /tmp/security-project
+          cat > /tmp/security-project/app.py << 'EOF'
+          import subprocess
+
+          def run_command(user_input):
+              # Intentional shell injection for testing
+              result = subprocess.run(user_input, shell=True, capture_output=True)
+              return result.stdout
+
+          def main():
+              cmd = "echo hello"
+              output = run_command(cmd)
+              print(output)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/security-project"
+          mode: "scan"
+          analysis: "security"
+          confidence: "50"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path output is set and file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report exists at $REPORT"
+
+      - name: Assert report is valid JSON with expected structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating JSON report structure..."
+          python3 - << 'PYEOF'
+          import json, sys, os
+          report_path = os.environ.get("REPORT", "skylos-report.json")
+          with open(report_path) as f:
+              data = json.load(f)
+          if not isinstance(data, dict):
+              print("FAIL: report is not a JSON object")
+              sys.exit(1)
+          print(f"PASS: report has {len(data)} top-level keys: {list(data.keys())}")
+          PYEOF

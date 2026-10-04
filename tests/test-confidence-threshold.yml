@@ -1,0 +1,83 @@
+name: Test confidence threshold input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Python project
+        run: |
+          mkdir -p /tmp/threshold-project
+          cat > /tmp/threshold-project/main.py << 'EOF'
+          def add(a: int, b: int) -> int:
+              """Add two numbers."""
+              return a + b
+
+          def multiply(a: int, b: int) -> int:
+              """Multiply two numbers."""
+              return a * b
+
+          if __name__ == "__main__":
+              print(add(1, 2))
+              print(multiply(3, 4))
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/threshold-project"
+          mode: "scan"
+          analysis: "dead-code security"
+          confidence: "95"
+
+      - name: Assert findings-count output is set (numeric)
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS (numeric)"
+
+      - name: Assert report-path output is set and file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report exists at $REPORT"
+
+      - name: Assert report JSON is parseable and count matches output
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Verifying findings count matches report..."
+          python3 - << 'PYEOF'
+          import json, sys, os
+          report_path = os.environ.get("REPORT", "skylos-report.json")
+          expected = int(os.environ.get("FINDINGS", "0"))
+          with open(report_path) as f:
+              data = json.load(f)
+          count = sum(len(v) for v in data.values() if isinstance(v, list))
+          print(f"Report count: {count}, Output count: {expected}")
+          if count != expected:
+              print(f"FAIL: count mismatch: report={count}, output={expected}")
+              sys.exit(1)
+          print("PASS: findings count matches report")
+          PYEOF
