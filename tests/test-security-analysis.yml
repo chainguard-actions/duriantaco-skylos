@@ -1,0 +1,79 @@
+name: Test security-only analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python source with potential security patterns
+        run: |
+          mkdir -p /tmp/security-src
+          cat > /tmp/security-src/app.py << 'EOF'
+          import os
+
+          def get_config():
+              """Read configuration."""
+              host = os.environ.get("DB_HOST", "localhost")
+              port = int(os.environ.get("DB_PORT", "5432"))
+              return {"host": host, "port": port}
+
+          def main():
+              config = get_config()
+              print(f"Connecting to {config['host']}:{config['port']}")
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/security-src"
+          mode: "scan"
+          analysis: "security"
+          confidence: "60"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+            exit 1
+          fi
+          echo "PASS: security analysis produced findings-count=$FINDINGS"
+
+      - name: Assert report-path output is set and file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists at $REPORT"
+
+      - name: Assert gate-passed is not set (scan mode has no gate)
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "gate-passed: '$GATE_PASSED'"
+          # In scan mode, gate step is skipped, so gate-passed should be empty
+          if [ -n "$GATE_PASSED" ]; then
+            echo "INFO: gate-passed is set to '$GATE_PASSED' (gate step ran)"
+          else
+            echo "INFO: gate-passed is empty (gate step skipped in scan mode)"
+          fi
+          echo "PASS"

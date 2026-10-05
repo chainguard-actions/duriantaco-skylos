@@ -1,0 +1,61 @@
+name: Test confidence threshold input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python source to scan
+        run: |
+          mkdir -p /tmp/threshold-src
+          cat > /tmp/threshold-src/app.py << 'EOF'
+          def used_function():
+              return 42
+
+          def main():
+              result = used_function()
+              print(result)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/threshold-src"
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "95"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS (high confidence threshold applied)"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists"

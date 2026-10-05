@@ -1,0 +1,65 @@
+name: Test gate mode with clean code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal clean Python file for scanning
+        run: |
+          mkdir -p /tmp/clean-src
+          cat > /tmp/clean-src/hello.py << 'EOF'
+          def greet(name: str) -> str:
+              """Return a greeting string."""
+              return f"Hello, {name}!"
+
+          if __name__ == "__main__":
+              print(greet("world"))
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/clean-src"
+          mode: "gate"
+          analysis: "dead-code security"
+          confidence: "80"
+        continue-on-error: true
+
+      - name: Assert gate-passed output is set
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE_PASSED"
+          echo "findings-count: $FINDINGS"
+          # gate-passed must be either true or false
+          if [ "$GATE_PASSED" != "true" ] && [ "$GATE_PASSED" != "false" ]; then
+            echo "FAIL: gate-passed must be 'true' or 'false', got: '$GATE_PASSED'"
+            exit 1
+          fi
+          # findings-count must be a non-negative integer
+          if [ -n "$FINDINGS" ] && ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+            exit 1
+          fi
+          echo "PASS: gate-passed=$GATE_PASSED findings-count=$FINDINGS"
+
+      - name: Assert report file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists at $REPORT"

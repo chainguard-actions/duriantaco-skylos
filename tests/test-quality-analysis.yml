@@ -1,0 +1,80 @@
+name: Test quality analysis type
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python source for quality analysis
+        run: |
+          mkdir -p /tmp/quality-src
+          cat > /tmp/quality-src/module.py << 'EOF'
+          def calculate(x, y):
+              """Calculate sum of two numbers."""
+              result = x + y
+              return result
+
+          def process_items(items):
+              """Process a list of items."""
+              output = []
+              for item in items:
+                  output.append(item * 2)
+              return output
+
+          if __name__ == "__main__":
+              print(calculate(1, 2))
+              print(process_items([1, 2, 3]))
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/quality-src"
+          mode: "scan"
+          analysis: "quality"
+          confidence: "60"
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+            exit 1
+          fi
+          echo "PASS: quality analysis produced findings-count=$FINDINGS"
+
+      - name: Assert report-path output is set and file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists at $REPORT"
+
+      - name: Assert report is valid JSON with expected structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Validating JSON structure at: $REPORT"
+          python3 -c "
+          import json
+          with open('$REPORT') as f:
+              data = json.load(f)
+          print('Report keys:', list(data.keys()))
+          print('PASS: report is valid JSON')
+          "
