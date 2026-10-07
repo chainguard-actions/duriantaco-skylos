@@ -1,0 +1,65 @@
+name: Test confidence threshold input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Create a Python fixture to scan
+      - name: Create Python fixture
+        run: |
+          mkdir -p /tmp/skylos-confidence-fixture
+          cat > /tmp/skylos-confidence-fixture/example.py << 'EOF'
+          import os
+          import sys
+
+          def process_data(data):
+              """Process some data."""
+              result = []
+              for item in data:
+                  result.append(item * 2)
+              return result
+
+          def helper():
+              """Helper that is never called."""
+              return None
+
+          if __name__ == "__main__":
+              output = process_data([1, 2, 3])
+              print(output)
+          EOF
+
+      # Run with maximum confidence (100) - should produce fewer or zero findings
+      - id: high_confidence
+        uses: .
+        with:
+          path: "/tmp/skylos-confidence-fixture"
+          mode: "scan"
+          analysis: "dead-code security"
+          confidence: "100"
+
+      - name: Assert high-confidence scan outputs are valid
+        env:
+          FINDINGS: ${{ steps.high_confidence.outputs.findings-count }}
+          REPORT: ${{ steps.high_confidence.outputs.report-path }}
+        run: |
+          echo "high-confidence findings-count: $FINDINGS"
+          echo "high-confidence report-path: $REPORT"
+
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at '$REPORT'"
+            exit 1
+          fi
+
+          echo "PASS: high-confidence scan produced valid outputs (findings=$FINDINGS)"
