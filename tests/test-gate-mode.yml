@@ -1,0 +1,67 @@
+name: Test gate mode on clean code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal clean Python file to scan
+        run: |
+          mkdir -p tests/fixtures/clean_python
+          cat > tests/fixtures/clean_python/hello.py << 'EOF'
+          def greet(name: str) -> str:
+              """Return a greeting string."""
+              return f"Hello, {name}!"
+
+          if __name__ == "__main__":
+              print(greet("world"))
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean_python
+          mode: gate
+          analysis: dead-code security
+          confidence: "80"
+        continue-on-error: true
+
+      - name: Assert gate outputs
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          GATE: ${{ steps.action.outputs.gate-passed }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "gate-passed: $GATE"
+          echo "report-path: $REPORT"
+
+          # findings-count must be a non-negative integer
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+
+          # report-path must be set
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+
+          # gate-passed must be true or false
+          if [ "$GATE" != "true" ] && [ "$GATE" != "false" ]; then
+            echo "FAIL: gate-passed must be 'true' or 'false', got: '$GATE'"
+            exit 1
+          fi
+
+          # If gate passed, action should have succeeded; if gate failed, action exits 1
+          if [ "$GATE" = "true" ] && [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: gate-passed=true but action outcome=$OUTCOME"
+            exit 1
+          fi
+
+          echo "PASS: gate mode completed, findings=$FINDINGS, gate-passed=$GATE"

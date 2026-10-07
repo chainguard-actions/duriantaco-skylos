@@ -1,0 +1,66 @@
+name: Test security-only analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a Python file with a potential security issue
+        run: |
+          mkdir -p tests/fixtures/security_scan
+          cat > tests/fixtures/security_scan/app.py << 'EOF'
+          import subprocess
+
+          def run_command(cmd):
+              """Run a shell command."""
+              result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+              return result.stdout
+
+          def main():
+              output = run_command("echo hello")
+              print(output)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/security_scan
+          mode: scan
+          analysis: security
+          confidence: "50"
+        continue-on-error: true
+
+      - name: Assert security scan outputs
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          # In scan mode the action should succeed regardless of findings
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected action to succeed in scan mode, got outcome=$OUTCOME"
+            exit 1
+          fi
+
+          # findings-count must be a non-negative integer
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+
+          # report-path must be set
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+
+          echo "PASS: security analysis completed, findings=$FINDINGS"

@@ -1,0 +1,73 @@
+name: Test dead-code analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python files with dead code
+        run: |
+          mkdir -p tests/fixtures/dead_code
+          cat > tests/fixtures/dead_code/module.py << 'EOF'
+          def used_function():
+              """This function is called."""
+              return 42
+
+          def unused_function():
+              """This function is never called - dead code."""
+              return "I am never used"
+
+          def another_unused():
+              """Also dead code."""
+              pass
+
+          result = used_function()
+          print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/dead_code
+          mode: scan
+          analysis: dead-code
+          confidence: "60"
+        continue-on-error: true
+
+      - name: Assert dead-code scan outputs
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          # In scan mode the action should succeed regardless of findings
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected action to succeed in scan mode, got outcome=$OUTCOME"
+            exit 1
+          fi
+
+          # findings-count must be a non-negative integer
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+
+          # report-path must be set
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+
+          # The report file should exist on disk
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at path: $REPORT"
+            exit 1
+          fi
+
+          echo "PASS: dead-code analysis completed, findings=$FINDINGS"

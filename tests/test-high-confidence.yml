@@ -1,0 +1,64 @@
+name: Test high confidence threshold
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a simple Python file to scan
+        run: |
+          mkdir -p tests/fixtures/confidence_test
+          cat > tests/fixtures/confidence_test/simple.py << 'EOF'
+          def add(a: int, b: int) -> int:
+              """Add two numbers."""
+              return a + b
+
+          def multiply(a: int, b: int) -> int:
+              """Multiply two numbers."""
+              return a * b
+
+          if __name__ == "__main__":
+              print(add(1, 2))
+              print(multiply(3, 4))
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/confidence_test
+          mode: scan
+          analysis: dead-code security
+          confidence: "90"
+        continue-on-error: true
+
+      - name: Assert high-confidence scan outputs
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          # In scan mode the action should succeed
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected action to succeed in scan mode, got outcome=$OUTCOME"
+            exit 1
+          fi
+
+          # findings-count must be a non-negative integer
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+
+          # report-path must be set
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+
+          echo "PASS: high-confidence scan completed, findings=$FINDINGS"

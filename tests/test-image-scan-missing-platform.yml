@@ -1,0 +1,39 @@
+name: Test image scan fails gracefully without platform
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # When image is set but image-platform is missing, the action should fail
+      # with a clear error (exit 2) rather than silently producing wrong results.
+      - id: action
+        uses: .
+        with:
+          image: "alpine@sha256:4bcff63911fcb4b9e9f8e4c8e4b8e4c8e4b8e4c8e4b8e4c8e4b8e4c8e4b8e4c8"
+          mode: gate
+        continue-on-error: true
+
+      - name: Assert action failed gracefully (missing image-platform)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          GATE: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE"
+
+          # The action must fail (not succeed) when image-platform is missing
+          if [ "$OUTCOME" = "success" ]; then
+            echo "FAIL: action should have failed when image-platform is missing"
+            exit 1
+          fi
+
+          # gate-passed should be false on validation error
+          if [ "$GATE" = "true" ]; then
+            echo "FAIL: gate-passed should not be true when validation fails"
+            exit 1
+          fi
+
+          echo "PASS: action correctly failed when image-platform was not provided"
