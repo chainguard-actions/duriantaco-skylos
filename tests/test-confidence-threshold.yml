@@ -1,0 +1,59 @@
+name: Test confidence threshold input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python fixture
+        run: |
+          mkdir -p /tmp/skylos-confidence
+          cat > /tmp/skylos-confidence/main.py << 'EOF'
+          def compute(x, y):
+              return x + y
+
+          def helper():
+              pass
+
+          print(compute(1, 2))
+          EOF
+
+      - id: action-high-confidence
+        uses: .
+        with:
+          path: "/tmp/skylos-confidence"
+          mode: "scan"
+          analysis: "dead-code security"
+          confidence: "95"
+
+      - name: Assert high-confidence scan produces valid findings-count
+        env:
+          FINDINGS: ${{ steps.action-high-confidence.outputs.findings-count }}
+        run: |
+          echo "findings-count (confidence=95): $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path is set
+        env:
+          REPORT: ${{ steps.action-high-confidence.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist"
+            exit 1
+          fi
+          echo "PASS: report file exists"

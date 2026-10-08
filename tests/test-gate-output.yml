@@ -1,0 +1,79 @@
+name: Test gate mode output values
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Python fixture
+        run: |
+          mkdir -p /tmp/skylos-gate-test
+          cat > /tmp/skylos-gate-test/clean.py << 'EOF'
+          """A minimal clean Python module."""
+
+
+          def add(a: int, b: int) -> int:
+              """Add two integers."""
+              return a + b
+
+
+          def main() -> None:
+              """Entry point."""
+              print(add(1, 2))
+
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      # Run in gate mode; may pass or fail depending on findings.
+      # We use continue-on-error so we can assert on the output regardless.
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          path: "/tmp/skylos-gate-test"
+          mode: "gate"
+          analysis: "dead-code security"
+          confidence: "80"
+
+      - name: Assert gate-passed output is a boolean string
+        env:
+          GATE: ${{ steps.action.outputs.gate-passed }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ "$GATE" != "true" ]; then
+              echo "FAIL: action succeeded but gate-passed is not 'true': $GATE"
+              exit 1
+            fi
+            echo "PASS: gate-passed=true and action succeeded"
+          elif [ "$OUTCOME" = "failure" ]; then
+            if [ "$GATE" != "false" ]; then
+              echo "FAIL: action failed but gate-passed is not 'false': $GATE"
+              exit 1
+            fi
+            echo "PASS: gate-passed=false and action failed as expected"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Assert findings-count is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"

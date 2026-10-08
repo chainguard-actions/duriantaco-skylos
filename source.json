@@ -1,6 +1,12 @@
 {
   "owner": "duriantaco",
   "repo": "skylos",
-  "version": "",
-  "url": "https://github.com/duriantaco/skylos"
+  "version": "v4.47.2",
+  "commit_sha": "abb2eab0172fc8ac7f7013e03e6e54d68f30d008",
+  "url": "https://github.com/duriantaco/skylos",
+  "policy_sha": "d636be7e43ef829af6e853da6b3c7566db9f72fe",
+  "test_policy_sha": "843adf9e4b8f85d0c08b27b9d0b09dd094b54702",
+  "test_agent_version": "2",
+  "harden_agent_version": "2",
+  "dependency_fingerprint": "sha256:27cc9a388ba16ff565ffeae294a4409263c4b3ee9ab7f234b9c46228efe0e5b5"
 }
