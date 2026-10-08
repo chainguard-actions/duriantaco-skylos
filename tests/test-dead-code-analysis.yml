@@ -1,0 +1,74 @@
+name: Test dead-code only analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python files with dead code
+        run: |
+          mkdir -p /tmp/skylos-dead-code-test
+          cat > /tmp/skylos-dead-code-test/main.py << 'EOF'
+          def used_function():
+              return 42
+
+          def unused_function():
+              """This function is never called."""
+              return "I am dead code"
+
+          if __name__ == "__main__":
+              result = used_function()
+              print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/skylos-dead-code-test"
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "60"
+
+      - name: Assert findings-count output is a non-negative integer
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS (valid non-negative integer)"
+
+      - name: Assert report-path output is set and file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at $REPORT"
+            exit 1
+          fi
+          echo "PASS: report file exists at $REPORT"
+
+      - name: Assert report JSON structure
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "Checking JSON structure of: $REPORT"
+          python3 - "$REPORT" << 'PYEOF'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          assert isinstance(data, dict), f"Expected dict, got {type(data)}"
+          print(f"PASS: report has {len(data)} top-level keys: {list(data.keys())}")
+          PYEOF
