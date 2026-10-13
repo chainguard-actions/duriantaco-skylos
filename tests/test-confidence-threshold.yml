@@ -1,0 +1,67 @@
+name: Test confidence threshold input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file for scanning
+        run: |
+          mkdir -p /tmp/skylos-confidence-test
+          cat > /tmp/skylos-confidence-test/module.py << 'EOF'
+          def used_function():
+              return 42
+
+          def another_used():
+              return used_function() + 1
+
+          if __name__ == "__main__":
+              print(another_used())
+          EOF
+
+      - id: action-high-confidence
+        uses: .
+        with:
+          path: "/tmp/skylos-confidence-test"
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "90"
+
+      - name: Assert high-confidence scan outputs are set
+        env:
+          FINDINGS: ${{ steps.action-high-confidence.outputs.findings-count }}
+          REPORT: ${{ steps.action-high-confidence.outputs.report-path }}
+        run: |
+          echo "findings-count (confidence=90): $FINDINGS"
+          echo "report-path: $REPORT"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: $FINDINGS"
+            exit 1
+          fi
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: high-confidence scan completed, findings-count=$FINDINGS"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT: ${{ steps.action-high-confidence.outputs.report-path }}
+        run: |
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at $REPORT"
+            exit 1
+          fi
+          python3 -c "
+          import json, sys
+          with open('$REPORT') as f:
+              data = json.load(f)
+          assert isinstance(data, dict), 'report must be a JSON object'
+          print('PASS: report is valid JSON with keys:', list(data.keys()))
+          "
