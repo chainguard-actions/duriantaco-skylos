@@ -1,0 +1,79 @@
+name: Test dead-code analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python fixture with unused functions
+        run: |
+          mkdir -p /tmp/dead-code-test
+          cat > /tmp/dead-code-test/module.py << 'EOF'
+          def used_function():
+              """This function is called."""
+              return 42
+
+          def unused_function():
+              """This function is never called - potential dead code."""
+              return "never used"
+
+          def another_unused():
+              """Also never called."""
+              pass
+
+          if __name__ == "__main__":
+              result = used_function()
+              print(result)
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          path: "/tmp/dead-code-test"
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "60"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count=$FINDINGS"
+
+      - name: Assert report-path output is set
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: report-path=$REPORT"
+
+      - name: Assert report file exists and is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file not found at $REPORT"
+            exit 1
+          fi
+          python3 - "$REPORT" << 'PYEOF'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          assert isinstance(data, dict), f"Expected dict, got {type(data)}"
+          total = sum(len(v) for v in data.values() if isinstance(v, list))
+          print(f"PASS: report valid, total findings across all categories: {total}")
+          PYEOF
