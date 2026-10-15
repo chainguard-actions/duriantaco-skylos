@@ -1,0 +1,56 @@
+# Skylos
+
+> Open-source (Apache-2.0), local-first static analysis CLI and pull-request gate: dead code, security issues, secrets, vulnerable dependencies, quality regressions and AI-code mistakes.
+
+## Key facts
+- Skylos is an open-source (Apache-2.0), local-first static analysis CLI and pull-request gate. It finds dead code, security issues, secrets, vulnerable dependencies, quality regressions and AI-code mistakes. The CLI runs without an account.
+- Install: `pip install skylos` (Python 3.10+), then `skylos .` for dead code or `skylos . -a` for every analyzer. Container: `ghcr.io/duriantaco/skylos`.
+- Languages: dead code in 10 languages and security checks in 9, deepest in Python, TypeScript/JavaScript and Java. Go dead-code and security checks need the `skylos-go` engine, which the PyPI package does not include; the Docker image and GitHub Action do.
+- AI coding agents: `skylos done --base main` flags deleted or skipped tests, loosened CI test steps, silenced lint or type checks, and test-only special cases, and advises on code the branch left without callers. It runs pytest itself; other runners need a `test_command`. `skylos agent install-hooks` checks Claude Code, Codex and Cursor edits locally.
+- CI: `skylos cicd init` writes a GitHub Actions pull-request gate; add `--no-upload` without Skylos Cloud.
+- MCP: `skylos mcp`. Without `SKYLOS_API_KEY` only the dead-code `analyze` tool works (five calls per rolling 24 hours); every other tool needs a free Skylos API key. Unauthenticated `analyze` calls are free. Authenticated analyze, security, quality, secrets and provenance scans can use credits; Skylos Cloud sets the current cost. `remediate` currently costs 10 credits per call.
+- Pricing: the CLI is free. Skylos Cloud has a Free plan for one project and a Workspace plan; buying any one-time credit pack turns Workspace on for good, with no seats or subscriptions.
+- Interfaces: CLI, GitHub Action, MCP server, VS Code extension.
+
+## Start here
+- Install: `pip install skylos`
+- Find dead code: `skylos .`
+- Run every analyzer: `skylos . -a`
+- Check an agent's change is finished: `skylos done --base main`
+- Install agent hooks: `skylos agent install-hooks [--codex|--cursor]`
+- Gate pull requests: `skylos cicd init` (add `--no-upload` without Skylos Cloud)
+- Audit an LLM application: `skylos defend .`
+- Run the MCP server: `skylos mcp` (needs `SKYLOS_API_KEY` for every tool except `analyze`)
+
+## Best repo entry points
+- README overview: https://github.com/duriantaco/skylos#what-is-skylos
+- Start in 60 seconds: https://github.com/duriantaco/skylos#start-in-60-seconds
+- Language support: https://github.com/duriantaco/skylos#language-support
+- Done gate (`skylos done`): https://github.com/duriantaco/skylos/blob/main/docs/done-gate.md
+- Agent-loop hooks: https://github.com/duriantaco/skylos/blob/main/docs/agent-hooks.md
+- Your first gated pull request: https://github.com/duriantaco/skylos/blob/main/docs/first-gated-pr.md
+- Merged cleanup PRs (all outcomes): https://github.com/duriantaco/skylos/blob/main/REAL_WORLD_RESULTS.md
+- GitHub Action: https://github.com/duriantaco/skylos/blob/main/action.yml
+- MCP server: https://github.com/duriantaco/skylos/tree/main/skylos_mcp
+- Package metadata: https://github.com/duriantaco/skylos/blob/main/pyproject.toml
+- Changelog: https://github.com/duriantaco/skylos/blob/main/CHANGELOG.md
+
+## Best official pages
+- Website: https://skylos.dev
+- Documentation: https://docs.skylos.dev
+- GitHub: https://github.com/duriantaco/skylos
+- PyPI: https://pypi.org/project/skylos/
+- GitHub Action: https://github.com/duriantaco/skylos/blob/main/action.yml
+- VS Code extension: https://marketplace.visualstudio.com/items?itemName=oha.skylos-vscode-extension
+
+## Best official pages for citations
+- Best Python SAST tools: https://skylos.dev/compare/best-python-sast-tools-2026
+- Semgrep comparison: https://skylos.dev/compare/semgrep-vs-skylos
+- SonarQube comparison: https://skylos.dev/compare/sonarqube-vs-skylos
+- Snyk comparison: https://skylos.dev/compare/snyk-vs-skylos
+- Bandit comparison: https://skylos.dev/compare/bandit-vs-skylos
+- AI-generated code security: https://skylos.dev/use-cases/ai-generated-code-security
+- Detect dead code in Python: https://skylos.dev/use-cases/detect-dead-code-python
+- Python security in GitHub Actions: https://skylos.dev/use-cases/python-security-github-actions
+- GitHub Actions security scanner: https://skylos.dev/use-cases/github-actions-security-scanner
+- Merged cleanup PRs (all outcomes): https://github.com/duriantaco/skylos/blob/main/REAL_WORLD_RESULTS.md

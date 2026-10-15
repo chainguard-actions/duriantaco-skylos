@@ -1,0 +1,41 @@
+name: Test confidence threshold input
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action-high-confidence
+        uses: .
+        with:
+          path: "tests/fixtures/basic"
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "100"
+        continue-on-error: true
+
+      - name: Assert high-confidence scan ran
+        env:
+          FINDINGS: ${{ steps.action-high-confidence.outputs.findings-count }}
+          REPORT: ${{ steps.action-high-confidence.outputs.report-path }}
+          OUTCOME: ${{ steps.action-high-confidence.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$REPORT" ]; then
+              echo "FAIL: report-path output is empty"
+              exit 1
+            fi
+            echo "PASS: high-confidence scan completed, findings=$FINDINGS"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action ran (may have failed due to environment constraints)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

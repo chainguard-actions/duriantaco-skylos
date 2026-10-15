@@ -1,0 +1,395 @@
+import logging
+import os
+import pytest
+import tempfile
+from pathlib import Path
+from textwrap import dedent
+from skylos.core.tracer import CallTracer
+
+
+@pytest.fixture(scope="session")
+def sample_project():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        project_path = Path(temp_dir)
+
+        create_sample_project(project_path)
+        yield project_path
+
+
+def create_sample_project(base_path: Path):
+    (base_path / "app").mkdir()
+
+    app_init = base_path / "app" / "__init__.py"
+    app_init.write_text(
+        dedent("""
+        from .core import main_function
+        from .utils import helper_function
+        
+        __all__ = ['main_function', 'helper_function']
+    """)
+    )
+
+    core_py = base_path / "app" / "core.py"
+    core_py.write_text(
+        dedent("""
+        import os
+        import sys
+        from typing import Dict, List  # List is unused here
+        from collections import defaultdict
+        
+        def main_function():
+            '''Main entry point - should not be flagged'''
+            data = defaultdict(list)
+            return process_data(data)
+        
+        def process_data(data: Dict):
+            '''Used by main_function'''
+            return len(data)
+        
+        def deprecated_function():
+            '''This function is never called'''
+            unused_var = "should be flagged"
+            return unused_var
+        
+        def _private_helper():
+            '''Private function, might be unused'''
+            return "private"
+    """)
+    )
+
+    utils_py = base_path / "app" / "utils.py"
+    utils_py.write_text(
+        dedent("""
+        import json  # unused
+        import re
+        
+        def helper_function():
+            '''Exported function'''
+            return validate_input("test")
+        
+        def validate_input(text: str):
+            '''Used by helper_function'''
+            return re.match(r"^[a-z]+$", text) is not None
+        
+        def unused_utility():
+            '''Never called utility'''
+            return "utility"
+        
+        class ConfigManager:
+            '''Used class'''
+            def __init__(self):
+                self.config = {}
+            
+            def get(self, key):
+                return self.config.get(key)
+        
+        class LegacyProcessor:
+            '''Unused class'''
+            def process(self, data):
+                return data
+    """)
+    )
+
+    tests_dir = base_path / "tests"
+    tests_dir.mkdir()
+
+    test_core = tests_dir / "test_core.py"
+    test_core.write_text(
+        dedent("""
+        import unittest
+        from app.core import main_function, process_data
+        
+        class TestCore(unittest.TestCase):
+            def test_main_function(self):
+                result = main_function()
+                self.assertIsInstance(result, int)
+            
+            def test_process_data(self):
+                data = {'key': ['value']}
+                result = process_data(data)
+                self.assertEqual(result, 1)
+            
+            def test_edge_case(self):
+                '''Test methods should not be flagged'''
+                pass
+    """)
+    )
+
+    config_dir = base_path / "config"
+    config_dir.mkdir()
+
+    config_py = config_dir / "settings.py"
+    config_py.write_text(
+        dedent("""
+        import os
+        import logging
+        
+        DEBUG = True
+        DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///app.db")
+        
+        def setup_logging():
+            '''Might be called externally'''
+            logging.basicConfig(level=logging.INFO)
+    """)
+    )
+
+    pycache_dir = base_path / "__pycache__"
+    pycache_dir.mkdir()
+
+    cache_file = pycache_dir / "cached.pyc"
+    cache_file.write_bytes(b"fake compiled python")
+
+
+@pytest.fixture
+def simple_python_file():
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+        f.write(
+            dedent("""
+            import os  # unused
+            import sys
+            
+            def used_function():
+                print("Hello", file=sys.stderr)
+            
+            def unused_function():
+                return "never called"
+            
+            if __name__ == "__main__":
+                used_function()
+        """)
+        )
+        f.flush()
+        yield Path(f.name)
+        Path(f.name).unlink()
+
+
+@pytest.fixture
+def empty_project():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        yield Path(temp_dir)
+
+
+@pytest.fixture
+def project_with_syntax_error():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        project_path = Path(temp_dir)
+
+        valid_py = project_path / "valid.py"
+        valid_py.write_text("def valid_function():\n    return True\n")
+
+        invalid_py = project_path / "invalid.py"
+        invalid_py.write_text(
+            "def invalid_function(\n    # Missing closing parenthesis\n    return False\n"
+        )
+
+        yield project_path
+
+
+@pytest.fixture(autouse=True)
+def cleanup_temp_files():
+    """auto cleanup any temporary files after each test"""
+    yield
+
+
+# pytest sets this itself for every test phase and removes it afterwards.
+_PYTEST_OWNED_ENV = frozenset({"PYTEST_CURRENT_TEST"})
+
+
+@pytest.fixture(autouse=True)
+def _environ_restore():
+    """Put ``os.environ`` back the way the test found it.
+
+    Several CLI paths write the process environment for one run (LLM base
+    URLs, provider API keys, MCP transport); in a shared worker those values
+    reached every later test. After each test, added keys are removed and
+    changed or deleted keys get their old value back.
+
+    pytest orders a conftest's autouse fixtures by name, so this one is set up
+    before any of them requests ``monkeypatch``; ``monkeypatch`` therefore
+    undoes its own ``setenv``/``delenv`` first and this check runs last.
+    Fixtures with a wider scope set up first, so their variables are part of
+    the snapshot and stay until their own teardown.
+    """
+    environ = os.environ
+    saved = {k: v for k, v in environ.items() if k not in _PYTEST_OWNED_ENV}
+    yield
+    for key in [k for k in environ if k not in saved]:
+        if key not in _PYTEST_OWNED_ENV:
+            del environ[key]
+    for key, value in saved.items():
+        if environ.get(key) != value:
+            environ[key] = value
+
+
+@pytest.fixture(autouse=True)
+def _restore_skylos_logger():
+    """Undo ``cli.setup_logger`` after every test.
+
+    ``cli.main()`` configures the process-wide "skylos" logger for one CLI run:
+    INFO level, a RichHandler that prints to whatever ``sys.stdout`` is when a
+    record arrives, ``propagate = False`` and a ``console`` attribute. In a
+    shared pytest worker that setup outlived the test, so later tests' log
+    records landed in their captured stdout instead of reaching ``caplog``.
+    """
+    logger = logging.getLogger("skylos")
+    attributes = dict(vars(logger))
+    handlers, filters = list(logger.handlers), list(logger.filters)
+    yield
+    for handler in logger.handlers:
+        if handler not in handlers:
+            handler.close()
+    vars(logger).clear()
+    vars(logger).update(attributes, handlers=handlers, filters=filters)
+    # setLevel also clears every logger's cached isEnabledFor answers.
+    logger.setLevel(attributes["level"])
+
+
+@pytest.fixture
+def unconfigured_skylos_logger(monkeypatch):
+    """The "skylos" logger as a fresh subcommand process has it: no setup.
+
+    Use it where a test checks a command's stdout contract, so the result
+    never depends on a logger configuration left by earlier code.
+    """
+    logger = logging.getLogger("skylos")
+    monkeypatch.setattr(logger, "handlers", [])
+    monkeypatch.setattr(logger, "filters", [])
+    monkeypatch.setattr(logger, "propagate", True)
+    monkeypatch.setattr(logger, "disabled", False)
+    monkeypatch.delattr(logger, "console", raising=False)
+    level = logger.level
+    logger.setLevel(logging.NOTSET)
+    yield logger
+    logger.setLevel(level)
+
+
+@pytest.fixture(autouse=True)
+def _no_pypi_wheel_lookups(monkeypatch):
+    """Dependency checks must not read wheel indexes from the real PyPI.
+
+    Every declared distribution reads as "no wheel" (modules unknown). Tests
+    that cover provider lookups stub ``_fetch_dist_modules`` with real answers.
+    """
+    from skylos.rules.ai_defect import dependency_hallucination
+
+    monkeypatch.setattr(
+        dependency_hallucination,
+        "_fetch_dist_modules",
+        lambda _dist, **_kwargs: {"status": "no_wheel"},
+    )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cloud_uploads(monkeypatch, tmp_path_factory):
+    """Keep upload retries fast and their side effects out of the checkout.
+
+    Failed uploads are saved for ``skylos upload --retry``; tests must never
+    write them into the repository, sleep between retries, or ask the real
+    Skylos Cloud for its contract version. Tests that exercise those features
+    override these variables.
+    """
+    monkeypatch.setenv("SKYLOS_UPLOAD_RETRY_BASE_SECONDS", "0")
+    # A retryable 409 is otherwise waited out for up to 300s of real time.
+    monkeypatch.setenv("SKYLOS_UPLOAD_CONFLICT_BUDGET_SECONDS", "0")
+    monkeypatch.setenv("SKYLOS_UPLOAD_CONTRACT_CHECK", "0")
+    monkeypatch.setenv(
+        "SKYLOS_PENDING_UPLOAD_DIR",
+        str(tmp_path_factory.mktemp("pending-uploads")),
+    )
+    # Even a test that removes SKYLOS_PENDING_UPLOAD_DIR must not reach the
+    # real ~/.skylos: the default queue root is a temporary folder too.
+    from skylos.api import _pending_uploads
+
+    home_guard = tmp_path_factory.mktemp("no-real-home") / ".skylos" / "pending-uploads"
+    monkeypatch.setattr(_pending_uploads, "default_pending_root", lambda: home_guard)
+    yield
+
+
+pytest_plugins = []
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "integration: mark test as an integration test")
+    config.addinivalue_line("markers", "unit: mark test as a unit test")
+    config.addinivalue_line("markers", "slow: mark test as slow running")
+    config.addinivalue_line("markers", "cli: mark test as CLI interface test")
+
+    global _tracer
+
+    if config.getoption("--skylos-trace"):
+        include = config.getoption("--skylos-trace-include")
+        include_patterns = include.split(",") if include else None
+
+        _tracer = CallTracer(include_patterns=include_patterns)
+        _tracer.start()
+        print("\nSkylos call tracing enabled")
+
+
+@pytest.fixture
+def mock_git_repo():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        repo_path = Path(temp_dir)
+
+        try:
+            import subprocess
+
+            subprocess.run(
+                ["git", "init"], cwd=repo_path, check=True, capture_output=True
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=repo_path,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
+            )
+
+            test_file = repo_path / "test.py"
+            test_file.write_text("def test(): pass\n")
+            subprocess.run(["git", "add", "."], cwd=repo_path, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Initial commit"], cwd=repo_path, check=True
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+        yield repo_path
+
+
+_tracer = None
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--skylos-trace",
+        action="store_true",
+        default=False,
+        help="Enable Skylos call tracing to capture dynamic function calls",
+    )
+    parser.addoption(
+        "--skylos-trace-include",
+        action="store",
+        default=None,
+        help="Comma-separated path patterns to include (e.g., 'skylos/,myproject/')",
+    )
+    parser.addoption(
+        "--skylos-trace-output",
+        action="store",
+        default=".skylos_trace",
+        help="Output file for trace data (default: .skylos_trace)",
+    )
+
+
+def pytest_unconfigure(config):
+    global _tracer
+
+    if _tracer is not None:
+        _tracer.stop()
+        output_path = config.getoption("--skylos-trace-output", ".skylos_trace")
+        _tracer.save(output_path)
+
+        stats = _tracer.get_stats()
+        print(
+            f"\nSkylos trace: {stats['unique_functions']} functions across {stats['files_traced']} files"
+        )
