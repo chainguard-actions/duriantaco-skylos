@@ -1,0 +1,202 @@
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import skylos
+from skylos.constants import DEFAULT_EXCLUDE_FOLDERS
+from .go_contract import build_go_engine_args, validate_go_engine_output
+
+
+DEFAULT_SKIP_DIRS = {d for d in DEFAULT_EXCLUDE_FOLDERS if "*" not in d}
+
+
+class GoEngineError(RuntimeError):
+    pass
+
+
+GO_ENGINE_SOURCE_REPO = "https://github.com/duriantaco/skylos.git"
+GO_ENGINE_IMAGE = "ghcr.io/duriantaco/skylos"
+GO_ENGINE_MIN_GO = "1.22"
+
+
+def go_engine_install_steps(version: str | None = None) -> list[str]:
+    """Shell commands that build the engine matching this Skylos onto PATH."""
+    tag = f"v{version or skylos.__version__}"
+    return [
+        f"git clone --depth 1 --branch {tag} {GO_ENGINE_SOURCE_REPO} skylos-src",
+        "cd skylos-src/skylos/engines/go && go build -trimpath "
+        '-o "$HOME/.local/bin/skylos-go" ./cmd/skylos-go',
+    ]
+
+
+def go_engine_install_hint(version: str | None = None) -> str:
+    """One line: every supported way to get Go dead-code and security checks."""
+    version = version or skylos.__version__
+    clone, build = go_engine_install_steps(version)
+    return (
+        f"Build the skylos-go engine for this Skylos (needs Go {GO_ENGINE_MIN_GO}+): "
+        f"{clone} && {build} ; then keep $HOME/.local/bin on PATH or set "
+        "SKYLOS_GO_BIN to the binary (skylos-go.exe on Windows). Or scan with "
+        f"the container image {GO_ENGINE_IMAGE}:{version}, or with the Skylos "
+        "GitHub Action, which builds the engine itself. `skylos doctor` shows "
+        "whether the engine is found."
+    )
+
+
+def get_go_engine_status() -> dict[str, str]:
+    try:
+        engine_bin = resolve_go_engine_bin()
+    except GoEngineError as exc:
+        reason = str(exc).splitlines()[0] if str(exc) else "Go engine unavailable"
+        return {
+            "status": "unavailable",
+            "reason": reason,
+            "configured_by": "SKYLOS_GO_BIN" if os.getenv("SKYLOS_GO_BIN") else "discovery",
+            "install": go_engine_install_hint(),
+        }
+
+    path = Path(engine_bin)
+    bundled_dir = Path(__file__).resolve().parent / "go"
+    if os.getenv("SKYLOS_GO_BIN"):
+        configured_by = "SKYLOS_GO_BIN"
+    elif path.parent == bundled_dir:
+        configured_by = "bundled"
+    else:
+        configured_by = "PATH"
+    return {
+        "status": "available",
+        "binary": str(path),
+        "configured_by": configured_by,
+    }
+
+
+def _is_runnable_go_engine(candidate: Path) -> bool:
+    try:
+        proc = subprocess.run(
+            [str(candidate), "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:
+        return False
+    return proc.returncode == 0
+
+
+def discover_go_modules(scan_root):
+    scan_root = Path(scan_root).resolve()
+    modules = []
+
+    if (scan_root / "go.mod").is_file():
+        return [scan_root]
+
+    stack = [scan_root]
+    while stack:
+        cur = stack.pop()
+
+        name = cur.name
+        if name in DEFAULT_SKIP_DIRS:
+            continue
+        if name.startswith(".") and name not in {".", ".."} and name != ".github":
+            continue
+
+        go_mod = cur / "go.mod"
+        if go_mod.is_file():
+            modules.append(cur)
+            continue
+
+        try:
+            for child in cur.iterdir():
+                if child.is_dir():
+                    stack.append(child)
+        except Exception:
+            continue
+
+    modules = sorted(modules, key=lambda p: str(p))
+    return modules
+
+
+def resolve_go_engine_bin():
+    override = os.getenv("SKYLOS_GO_BIN")
+    if override:
+        p = Path(override).expanduser()
+        if p.is_file() and _is_runnable_go_engine(p):
+            return str(p)
+        raise GoEngineError(
+            "SKYLOS_GO_BIN is set but the binary is missing or not runnable on this platform: %s"
+            % p
+        )
+
+    exe = "skylos-go.exe" if os.name == "nt" else "skylos-go"
+    pkg_dir = Path(__file__).resolve().parent / "go" / exe
+    if pkg_dir.is_file() and _is_runnable_go_engine(pkg_dir):
+        return str(pkg_dir)
+
+    found = shutil.which(exe) or shutil.which("skylos-go")
+    if found and _is_runnable_go_engine(Path(found)):
+        return found
+
+    raise GoEngineError(
+        "Go engine binary not found (skylos-go).\n"
+        "Build the engine for this Skylos version and put it on PATH:\n"
+        + "".join(f"  {step}\n" for step in go_engine_install_steps())
+        + "Or set:\n"
+        "  export SKYLOS_GO_BIN=/absolute/path/to/skylos-go"
+    )
+
+
+def run_go_engine_for_module(module_root, timeout_s=60):
+    engine_bin = resolve_go_engine_bin()
+    module_root = Path(module_root).resolve()
+
+    argv = build_go_engine_args(
+        engine_bin=engine_bin,
+        root=str(module_root),
+        skylos_version=str(skylos.__version__),
+    )
+
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=str(module_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise GoEngineError(
+            "Go engine timed out after %ss for module: %s" % (timeout_s, module_root)
+        )
+    except Exception as e:
+        raise GoEngineError("Failed to run Go engine: %s" % e)
+
+    if proc.returncode != 0:
+        raise GoEngineError(
+            "Go engine failed.\n"
+            "Command: %s\n"
+            "Exit code: %s\n"
+            "STDERR:\n%s"
+            % (" ".join(argv), proc.returncode, (proc.stderr or "").strip())
+        )
+
+    try:
+        obj = json.loads(proc.stdout or "")
+    except Exception as e:
+        raise GoEngineError(
+            "Go engine returned invalid JSON.\n"
+            "STDOUT:\n%s\n"
+            "STDERR:\n%s\n"
+            "Error: %s" % ((proc.stdout or "").strip(), (proc.stderr or "").strip(), e)
+        )
+
+    out = validate_go_engine_output(obj)
+    return {
+        "findings": list(out.get("findings", [])),
+        "symbols": out.get("symbols"),
+    }

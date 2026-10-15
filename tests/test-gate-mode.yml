@@ -1,0 +1,45 @@
+name: Test gate mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a clean Python file to scan
+        run: |
+          mkdir -p /tmp/skylos-test-clean
+          cat > /tmp/skylos-test-clean/hello.py << 'EOF'
+          def greet(name: str) -> str:
+              """Return a greeting."""
+              return f"Hello, {name}!"
+
+          if __name__ == "__main__":
+              print(greet("world"))
+          EOF
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          path: "/tmp/skylos-test-clean"
+          mode: "gate"
+          analysis: "dead-code"
+          confidence: "80"
+
+      - name: Assert gate-passed output is set
+        env:
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE_PASSED"
+          echo "findings-count: $FINDINGS"
+          # gate-passed should be set to true or false
+          if [ "$GATE_PASSED" != "true" ] && [ "$GATE_PASSED" != "false" ]; then
+            echo "FAIL: gate-passed should be 'true' or 'false', got: '$GATE_PASSED'"
+            exit 1
+          fi
+          echo "PASS: gate-passed=$GATE_PASSED"

@@ -1,0 +1,53 @@
+name: Test confidence threshold input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Python file for confidence test
+        run: |
+          mkdir -p /tmp/skylos-confidence-test
+          cat > /tmp/skylos-confidence-test/sample.py << 'EOF'
+          def calculate(x, y):
+              """Perform a calculation."""
+              return x + y
+
+          def helper():
+              """A helper function."""
+              return True
+
+          result = calculate(1, 2)
+          print(result)
+          EOF
+
+      - id: action-high-confidence
+        uses: .
+        with:
+          path: "/tmp/skylos-confidence-test"
+          mode: "scan"
+          analysis: "dead-code"
+          confidence: "95"
+
+      - name: Assert high-confidence scan produces valid output
+        env:
+          FINDINGS: ${{ steps.action-high-confidence.outputs.findings-count }}
+          REPORT: ${{ steps.action-high-confidence.outputs.report-path }}
+        run: |
+          echo "findings-count (confidence=95): $FINDINGS"
+          echo "report-path: $REPORT"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: high-confidence scan completed, findings=$FINDINGS"
