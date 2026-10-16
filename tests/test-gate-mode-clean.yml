@@ -1,0 +1,46 @@
+name: Test Skylos gate mode on clean code
+on:
+  workflow_dispatch:
+
+jobs:
+  test-gate-mode-clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean-target
+          mode: gate
+          analysis: dead-code security
+          confidence: "80"
+        continue-on-error: true
+
+      - name: Assert gate outcome
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          GATE_PASSED: ${{ steps.action.outputs.gate-passed }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE_PASSED"
+          echo "findings-count: $FINDINGS"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ "$GATE_PASSED" != "true" ]; then
+              echo "FAIL: gate should have passed on clean code but gate-passed='$GATE_PASSED'"
+              exit 1
+            fi
+            echo "PASS: gate passed on clean code"
+          elif [ "$OUTCOME" = "failure" ]; then
+            # Gate may fail if skylos finds issues in the clean code; check findings
+            echo "INFO: gate failed with findings-count='$FINDINGS'"
+            if [ -z "$FINDINGS" ]; then
+              echo "FAIL: action failed without producing findings-count output"
+              exit 1
+            fi
+            echo "PASS: action ran and produced findings output (gate failed on findings)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

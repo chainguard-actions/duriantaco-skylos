@@ -1,0 +1,43 @@
+name: Test Skylos with default inputs
+on:
+  workflow_dispatch:
+
+jobs:
+  test-default-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/default-target
+          mode: scan
+        continue-on-error: true
+
+      - name: Assert action ran and produced outputs
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $FINDINGS"
+          echo "report-path: $REPORT"
+          if [ "$OUTCOME" != "success" ] && [ "$OUTCOME" != "failure" ]; then
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          echo "PASS: action ran with default inputs and produced valid outputs"

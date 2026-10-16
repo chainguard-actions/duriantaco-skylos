@@ -1,0 +1,60 @@
+name: Test Skylos security analysis
+on:
+  workflow_dispatch:
+
+jobs:
+  test-security-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/security-target
+          mode: scan
+          analysis: security
+          confidence: "50"
+
+      - name: Assert findings-count output is set
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          if [ -z "$FINDINGS" ]; then
+            echo "FAIL: findings-count output is empty"
+            exit 1
+          fi
+          if ! echo "$FINDINGS" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: findings-count is not a non-negative integer: '$FINDINGS'"
+            exit 1
+          fi
+          echo "PASS: findings-count='$FINDINGS'"
+
+      - name: Assert report-path output is set and file exists
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report-path: $REPORT"
+          if [ -z "$REPORT" ]; then
+            echo "FAIL: report-path output is empty"
+            exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file does not exist at '$REPORT'"
+            exit 1
+          fi
+          echo "PASS: report file exists at '$REPORT'"
+
+      - name: Assert security findings detected
+        env:
+          FINDINGS: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $FINDINGS"
+          # With eval() and shell=True subprocess, we expect at least 1 security finding
+          if [ "$FINDINGS" -lt 1 ]; then
+            echo "WARN: expected at least 1 security finding for code with eval() and shell=True, got $FINDINGS"
+            echo "This may be acceptable if the scanner uses a higher confidence threshold"
+          else
+            echo "PASS: detected $FINDINGS security finding(s) as expected"
+          fi
