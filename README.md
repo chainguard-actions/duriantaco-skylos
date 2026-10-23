@@ -50,6 +50,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | v4.49.1 | [`v4.49.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.49.1) | [`42d7309`](https://github.com/duriantaco/skylos/commit/42d73098fe7730580e9217561991d2301d6d60aa) |
 | v4.50.0 | [`v4.50.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.50.0) | [`8807890`](https://github.com/duriantaco/skylos/commit/88078907963f76fe8971cbd69e4a4f6975d8a900) |
 | v4.50.1 | [`v4.50.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.50.1) | [`beb6518`](https://github.com/duriantaco/skylos/commit/beb6518c90071ebe6326fca6c262161758ebd44d) |
+| v5.0.0 | [`v5.0.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v5.0.0) | [`85227d1`](https://github.com/duriantaco/skylos/commit/85227d186026d6f85bb592460c2e9a4ff3d42778) |
 
 ## Privacy
 
