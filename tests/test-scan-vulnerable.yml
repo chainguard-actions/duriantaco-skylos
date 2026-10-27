@@ -1,0 +1,30 @@
+name: Test scan mode reports findings without failing
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/vulnerable
+          mode: scan
+          analysis: dead-code security
+      - name: Assert findings were reported
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $COUNT"
+          cat "$GITHUB_WORKSPACE/$REPORT" || true
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not numeric"
+            exit 1
+          fi
+          if [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected at least one finding in vulnerable fixture"
+            exit 1
+          fi
+          echo "PASS"
