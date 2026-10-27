@@ -1,0 +1,83 @@
+name: Test scan mode detects dead code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create standalone sample project with dead code (outside the repo)
+        run: |
+          SAMPLE="$RUNNER_TEMP/skylos-sample-dead"
+          rm -rf "$SAMPLE"
+          mkdir -p "$SAMPLE/pkg"
+          cat > "$SAMPLE/pyproject.toml" <<'EOF'
+          [project]
+          name = "skylos-sample-dead"
+          version = "0.0.1"
+          EOF
+          cat > "$SAMPLE/pkg/__init__.py" <<'EOF'
+          EOF
+          cat > "$SAMPLE/pkg/helpers.py" <<'EOF'
+          import os
+          import json
+          import subprocess
+          from collections import OrderedDict
+
+
+          def used_function():
+              return 1
+
+
+          def _private_unused_helper(value):
+              return value * 2
+
+
+          def never_called_helper_function(value):
+              return value * 3
+
+
+          class UnusedThing:
+              def _unused_method(self):
+                  return "unused"
+          EOF
+          cat > "$SAMPLE/main.py" <<'EOF'
+          import sys
+          import re
+
+          from pkg.helpers import used_function
+
+
+          def main():
+              print(used_function())
+
+
+          if __name__ == "__main__":
+              main()
+          EOF
+          find "$SAMPLE" -type f
+      - id: action
+        uses: .
+        with:
+          path: ${{ runner.temp }}/skylos-sample-dead
+          mode: scan
+          analysis: dead-code
+          confidence: "10"
+      - name: Assert findings were reported
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $COUNT"
+          echo "report-path: $REPORT"
+          head -c 4000 "$GITHUB_WORKSPACE/$REPORT" || true
+          echo
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not a number"
+            exit 1
+          fi
+          if [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected at least one dead-code finding"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,58 @@
+name: Test gate mode sets gate-passed consistently
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create sample project
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/skylos-sample-gate"
+          cat > "$GITHUB_WORKSPACE/skylos-sample-gate/app.py" <<'EOF'
+          import subprocess
+
+
+          def run(cmd):
+              return subprocess.call(cmd, shell=True)
+
+
+          def unused_thing():
+              return eval(input())
+
+
+          if __name__ == "__main__":
+              run("echo hi")
+          EOF
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          path: skylos-sample-gate
+          mode: gate
+      - name: Assert gate output matches outcome
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          GATE: ${{ steps.action.outputs.gate-passed }}
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $GATE"
+          echo "findings-count: $COUNT"
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not a number (scan did not complete)"
+            exit 1
+          fi
+          if [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected findings for insecure/dead code"
+            exit 1
+          fi
+          if [ "$OUTCOME" = "success" ]; then
+            [ "$GATE" = "true" ] || { echo "FAIL: success but gate-passed='$GATE'"; exit 1; }
+          elif [ "$OUTCOME" = "failure" ]; then
+            [ "$GATE" = "false" ] || { echo "FAIL: failure but gate-passed='$GATE'"; exit 1; }
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+          echo "PASS"

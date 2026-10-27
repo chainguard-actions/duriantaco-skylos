@@ -1,0 +1,1251 @@
+import io
+import shlex
+import sys
+
+import pytest
+import yaml
+from skylos.cicd.init_setup import DoneSetup, detect_done_setup
+from skylos.cicd.workflow import generate_workflow
+from skylos.cli_core.main_parser import build_main_parser
+from skylos.commands.done_cmd import build_parser as build_done_parser
+from skylos.core.safe_cache_io import write_text_no_symlink
+from skylos.rules.config.cicd.github_actions import scan_github_actions
+
+PR_UPLOAD_JOBS = ("pr-policy", "pr-scan", "pr-publish")
+
+
+def test_default_workflow_valid_yaml():
+    content = generate_workflow()
+    parsed = yaml.safe_load(content)
+    assert parsed["name"] == "Skylos Analysis"
+    assert "on" in parsed or True in parsed
+    assert "jobs" in parsed
+
+
+def test_workflow_has_all_steps():
+    content = generate_workflow()
+    parsed = yaml.safe_load(content)
+    steps = parsed["jobs"]["skylos"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+
+    assert "Checkout" in step_names
+    assert "Setup Python" in step_names
+    assert "Install Skylos" in step_names
+    assert "Run Skylos Analysis" in step_names
+    assert "Quality Gate" in step_names
+    assert "GitHub Annotations" in step_names
+    assert "PR Review Comments" in step_names
+    quality_gate = next(s for s in steps if s.get("name") == "Quality Gate")
+    assert "--advisory" not in quality_gate["run"]
+    pr_review = next(s for s in steps if s.get("name") == "PR Review Comments")
+    assert "--evidence-cards" in pr_review["run"]
+
+
+def test_workflow_can_generate_advisory_gate():
+    content = generate_workflow(advisory_gate=True)
+    parsed = yaml.safe_load(content)
+    steps = parsed["jobs"]["skylos"]["steps"]
+    quality_gate = next(s for s in steps if s.get("name") == "Quality Gate")
+    assert "--advisory" in quality_gate["run"]
+
+
+def test_workflow_triggers():
+    content = generate_workflow(triggers=["pull_request", "push"])
+    parsed = yaml.safe_load(content)
+    assert "pull_request" in parsed.get("on") or parsed.get(True)
+    assert "push" in parsed.get("on") or parsed.get(True)
+
+
+def test_workflow_custom_python_version():
+    content = generate_workflow(python_version="3.11")
+    assert "'3.11'" in content
+
+
+def test_workflow_analysis_flags():
+    content = generate_workflow(analysis_types=["security", "quality"])
+    assert "--danger" in content
+    assert "--quality" in content
+    assert "--ai-defects" not in content
+    assert "--secrets" not in content
+    assert "--sca" not in content
+
+
+def test_workflow_includes_ai_defects_by_default():
+    content = generate_workflow()
+    assert "--ai-defects" in content
+
+
+def test_workflow_includes_dependency_scan_by_default():
+    content = generate_workflow()
+    assert "--sca" in content
+
+
+def test_workflow_uses_baseline_by_default():
+    content = generate_workflow()
+    assert "--baseline" in content
+
+
+def test_workflow_omits_baseline_when_disabled():
+    content = generate_workflow(use_baseline=False)
+    assert "--baseline" not in content
+
+
+def test_workflow_pull_request_analysis_is_diff_aware():
+    content = generate_workflow()
+    assert 'pr_base_ref="origin/${GITHUB_BASE_REF:-main}"' in content
+    assert '--diff-base "$pr_base_ref"' in content
+    assert '--diff "$pr_base_ref"' in content
+    assert "github.base_ref" not in content
+
+
+def test_workflow_quotes_base_ref_in_pr_review_step():
+    content = generate_workflow()
+    parsed = yaml.safe_load(content)
+    steps = parsed["jobs"]["skylos"]["steps"]
+    pr_review = next(s for s in steps if s.get("name") == "PR Review Comments")
+    assert 'pr_base_ref="origin/${GITHUB_BASE_REF:-main}"' in pr_review["run"]
+    assert '--diff-base "$pr_base_ref"' in pr_review["run"]
+    assert "github.base_ref" not in pr_review["run"]
+
+
+def test_workflow_no_llm_by_default():
+    content = generate_workflow()
+    assert "SKYLOS_API_KEY" not in content
+    assert "agent review" not in content
+    assert "agent scan" not in content
+
+
+def test_workflow_with_llm():
+    content = generate_workflow(use_llm=True, model="claude-sonnet-4-5-20250929")
+    assert "agent scan" in content
+    assert "--changed" in content
+    assert "claude-sonnet-4-5-20250929" in content
+    assert "ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}" in content
+    assert "SKYLOS_API_KEY" not in content
+
+
+def _llm_step(content):
+    steps = yaml.safe_load(content)["jobs"]["skylos"]["steps"]
+    return next(s for s in steps if s.get("name") == "Skylos Agent Review (LLM)")
+
+
+@pytest.mark.parametrize(
+    ("model", "env_var"),
+    [
+        ("gpt-4.1", "OPENAI_API_KEY"),
+        ("claude-sonnet-4-20250514", "ANTHROPIC_API_KEY"),
+        ("gemini/gemini-2.0-flash", "GEMINI_API_KEY"),
+        ("groq/llama3-70b-8192", "GROQ_API_KEY"),
+        ("mistral/mistral-large-latest", "MISTRAL_API_KEY"),
+    ],
+)
+def test_workflow_llm_step_passes_the_key_the_cli_reads(model, env_var):
+    from skylos.cloud.credentials import PROVIDERS
+    from skylos.llm.runtime import detect_provider
+
+    step = _llm_step(generate_workflow(use_llm=True, model=model))
+
+    assert PROVIDERS[detect_provider(model)] == env_var
+    assert step["env"] == {env_var: f"${{{{ secrets.{env_var} }}}}"}
+
+
+def test_workflow_llm_step_with_a_local_model_needs_no_key():
+    content = generate_workflow(use_llm=True, model="ollama/llama3")
+
+    assert "env" not in _llm_step(content)
+    assert "API_KEY" not in content
+    assert "# Pull requests (no secrets needed):" in content
+
+
+def test_workflow_llm_header_names_the_secret():
+    content = generate_workflow(use_llm=True, model="gpt-4.1")
+
+    assert (
+        "# Pull requests (the LLM review step needs the OPENAI_API_KEY secret):"
+        in content
+    )
+    assert "no secrets needed" not in content
+
+
+def test_workflow_llm_step_runs_a_command_the_agent_parser_accepts():
+    from skylos.cli import _build_agent_parser
+
+    step = _llm_step(generate_workflow(use_llm=True, model="gpt-4.1"))
+    args = _build_agent_parser().parse_args(shlex.split(step["run"])[2:])
+
+    assert (args.agent_cmd, args.model, args.changed) == ("scan", "gpt-4.1", True)
+    assert (args.format, args.output) == ("json", "skylos-llm-results.json")
+
+
+def test_workflow_llm_installs_the_llm_extra_only_in_the_gate_job():
+    content = generate_workflow(use_llm=True, model="gpt-4.1", skylos_version="5.1.1")
+    jobs = yaml.safe_load(content)["jobs"]
+
+    def install_runs(job):
+        return [
+            s["run"] for s in jobs[job]["steps"] if s.get("name") == "Install Skylos"
+        ]
+
+    assert install_runs("skylos") == [
+        "python -I -m pip install 'skylos[dart,llm]==5.1.1'"
+    ]
+    assert install_runs("cloud-upload") == [
+        "python -I -m pip install 'skylos[dart]==5.1.1'"
+    ]
+
+
+def test_workflow_without_llm_installs_no_llm_extra():
+    content = generate_workflow(skylos_version="5.1.1")
+
+    assert "llm" not in content.lower()
+
+
+def test_workflow_claude_model_adds_anthropic_key():
+    content = generate_workflow(use_llm=True, model="claude-sonnet-4-20250514")
+    assert "ANTHROPIC_API_KEY" in content
+
+
+def test_workflow_non_claude_model_no_anthropic_key():
+    content = generate_workflow(use_llm=True, model="gpt-4.1")
+    assert "ANTHROPIC_API_KEY" not in content
+
+
+def test_workflow_permissions():
+    content = generate_workflow()
+    parsed = yaml.safe_load(content)
+    assert parsed["permissions"] == {"contents": "read"}
+    jobs = parsed["jobs"]
+    # Only the default-branch upload job may mint a GitHub OIDC token.
+    assert jobs["skylos"]["permissions"] == {
+        "contents": "read",
+        "pull-requests": "write",
+    }
+    assert jobs["done"]["permissions"] == {"contents": "read"}
+    assert jobs["cloud-upload"]["permissions"] == {
+        "contents": "read",
+        "id-token": "write",
+    }
+    assert jobs["skylos"]["timeout-minutes"] == 15
+
+
+def test_generated_workflow_passes_skylos_actions_audit(tmp_path):
+    workflow = tmp_path / ".github" / "workflows" / "skylos.yml"
+    _write(workflow, generate_workflow())
+
+    assert scan_github_actions(tmp_path) == []
+
+
+def test_generated_claude_workflow_passes_skylos_actions_audit(tmp_path):
+    workflow = tmp_path / ".github" / "workflows" / "skylos.yml"
+    _write(
+        workflow,
+        generate_workflow(
+            use_upload=True,
+            use_llm=True,
+            use_defend=True,
+            use_claude_security=True,
+            model="gpt-4.1",
+        ),
+    )
+
+    assert scan_github_actions(tmp_path) == []
+
+
+def test_workflow_schedule_trigger():
+    content = generate_workflow(triggers=["schedule"])
+    parsed = yaml.safe_load(content)
+    assert "schedule" in parsed.get("on") or parsed.get(True)
+
+
+def test_workflow_without_upload_has_no_cloud_job():
+    content = generate_workflow(use_upload=False)
+    parsed = yaml.safe_load(content)
+    assert "cloud-upload" not in parsed["jobs"]
+    assert "--upload" not in content
+    assert "id-token" not in content
+    assert "skylos sync pull" not in content
+    assert "SKYLOS_TOKEN" not in content
+    # Without the upload job, the gate job also scans default-branch pushes.
+    assert "if" not in parsed["jobs"]["skylos"]
+
+
+def test_workflow_uploads_through_oidc_by_default():
+    content = generate_workflow()
+    parsed = yaml.safe_load(content)
+    assert "SKYLOS_TOKEN" not in content
+    gate_job = parsed["jobs"]["skylos"]
+    assert gate_job["if"] == (
+        "github.event_name != 'push' && github.event_name != 'pull_request_target'"
+    )
+    analysis_step = next(
+        s for s in gate_job["steps"] if s.get("name") == "Run Skylos Analysis"
+    )
+    assert "--upload" not in analysis_step["run"]
+    # Only the merge queue's base commit reaches the scan; no upload settings.
+    assert analysis_step["env"] == {
+        "MERGE_GROUP_BASE_SHA": "${{ github.event.merge_group.base_sha }}"
+    }
+
+    job = parsed["jobs"]["cloud-upload"]
+    assert job["if"] == (
+        "github.event_name == 'push' && github.ref == "
+        "format('refs/heads/{0}', github.event.repository.default_branch)"
+    )
+    steps = job["steps"]
+    names = [s.get("name") for s in steps]
+    assert names.index("Pull Skylos Cloud Policy") < names.index(
+        "Scan and Upload to Skylos Cloud"
+    )
+    sync_step = steps[names.index("Pull Skylos Cloud Policy")]
+    # Fail closed, but say what to do: the CLI's own error can be a traceback.
+    sync_lines = sync_step["run"].splitlines()
+    assert sync_lines[0] == "if ! skylos sync pull; then"
+    assert sync_lines[1].startswith(
+        '  echo "::error title=Skylos Cloud policy unavailable::'
+    )
+    assert "skylos cicd init --no-upload" in sync_lines[1]
+    assert sync_lines[2:] == ["  exit 1", "fi"]
+    assert "continue-on-error" not in sync_step
+    upload_step = steps[names.index("Scan and Upload to Skylos Cloud")]
+    assert upload_step["run"].startswith("skylos cloud ")
+    args = build_main_parser(version="test").parse_args(
+        [*shlex.split(upload_step["run"])[2:], "--upload"]
+    )
+    assert args.upload and not args.no_upload and not args.force
+    assert not args.diff and not args.diff_base
+    assert upload_step["env"] == {
+        "SKYLOS_COMMIT": "${{ github.sha }}",
+        "SKYLOS_BRANCH": "${{ github.ref_name }}",
+    }
+
+
+def test_workflow_upload_with_llm():
+    content = generate_workflow(use_upload=True, use_llm=True, model="gpt-4.1")
+    parsed = yaml.safe_load(content)
+    steps = parsed["jobs"]["skylos"]["steps"]
+    analysis_step = next(s for s in steps if s.get("name") == "Run Skylos Analysis")
+    assert "--upload" not in analysis_step["run"]
+    llm_step = next(s for s in steps if s.get("name") == "Skylos Agent Review (LLM)")
+    assert llm_step["env"] == {"OPENAI_API_KEY": "${{ secrets.OPENAI_API_KEY }}"}
+    upload_steps = parsed["jobs"]["cloud-upload"]["steps"]
+    assert any(s.get("run", "").startswith("skylos cloud ") for s in upload_steps)
+    assert all("SKYLOS_API_KEY" not in s.get("env", {}) for s in upload_steps)
+
+
+def test_dead_code_only_workflow_keeps_the_manual_upload():
+    content = generate_workflow(analysis_types=["dead-code"])
+    steps = yaml.safe_load(content)["jobs"]["cloud-upload"]["steps"]
+    upload_step = next(
+        s for s in steps if s.get("name") == "Scan and Upload to Skylos Cloud"
+    )
+    assert upload_step["run"] == "skylos . --baseline --upload"
+
+
+def test_workflow_defend_uploads_only_from_upload_job():
+    content = generate_workflow(use_defend=True)
+    parsed = yaml.safe_load(content)
+    gate_defend = next(
+        s
+        for s in parsed["jobs"]["skylos"]["steps"]
+        if s.get("name") == "AI Defense Check"
+    )
+    assert "--upload" not in gate_defend["run"]
+    upload_defend = next(
+        s
+        for s in parsed["jobs"]["cloud-upload"]["steps"]
+        if s.get("name") == "AI Defense Check and Upload"
+    )
+    assert upload_defend["run"].endswith("--upload")
+    assert upload_defend["env"]["SKYLOS_COMMIT"] == "${{ github.sha }}"
+
+
+def test_workflow_scan_path_is_monorepo_aware():
+    content = generate_workflow(scan_path="apps/api", use_upload=True, use_defend=True)
+    assert "skylos apps/api" in content
+    assert "skylos defend apps/api" in content
+    assert '--json -o "$RUNNER_TEMP/defense-results.json"' in content
+    assert '--defense-input "$RUNNER_TEMP/defense-results.json"' in content
+    assert "--defense-input defense-results.json" not in content
+
+
+def test_workflow_prefixes_leading_dash_scan_path():
+    content = generate_workflow(scan_path="-service")
+    assert "skylos ./-service" in content
+
+
+@pytest.mark.parametrize("control_char", ["\n", "\r", "\t", "\x7f"])
+def test_workflow_rejects_scan_path_control_characters(control_char):
+    payload = f"apps/api{control_char}      - name: Injected Step"
+
+    with pytest.raises(ValueError, match="scan_path"):
+        generate_workflow(
+            scan_path=payload,
+            use_llm=True,
+            use_defend=True,
+        )
+
+
+def test_workflow_pins_installed_skylos_version():
+    content = generate_workflow(skylos_version="4.9.0")
+    # -I keeps files from the checked-out pull request off pip's sys.path.
+    assert "python -I -m pip install 'skylos[dart]==4.9.0'" in content
+    assert "python -m pip" not in content
+
+
+def test_workflow_gates_every_pull_request_and_filters_pushes():
+    parsed = yaml.safe_load(generate_workflow(default_branch="trunk"))
+    on = parsed["on"]
+    # No base-branch filter: a repository whose default branch is not main
+    # still gets the gate.
+    assert on["pull_request"] is None
+    assert on["push"] == {"branches": ["trunk"]}
+
+
+def test_workflow_push_filter_falls_back_to_main_and_master():
+    parsed = yaml.safe_load(generate_workflow())
+    assert parsed["on"]["push"] == {"branches": ["main", "master"]}
+
+
+@pytest.mark.parametrize(
+    "branch",
+    ["", "-x", "a b", "main\n  - injected", "${{ github.head_ref }}", "a..b", "x*"],
+)
+def test_workflow_rejects_unsafe_default_branch(branch):
+    with pytest.raises(ValueError, match="default_branch"):
+        generate_workflow(default_branch=branch)
+
+
+def test_done_job_runs_tests_on_pull_request_head_without_upload_authority():
+    content = generate_workflow(
+        done_install_commands=["python -I -m pip install -e . pytest", "npm ci"]
+    )
+    parsed = yaml.safe_load(content)
+    job = parsed["jobs"]["done"]
+    assert job["name"] == "Skylos Done"
+    assert job["if"] == (
+        "github.event_name == 'pull_request' || github.event_name == 'merge_group'"
+    )
+    assert job["permissions"] == {"contents": "read"}
+    assert "environment" not in job
+    checkout = job["steps"][0]
+    assert checkout["with"] == {
+        "ref": "${{ github.event.pull_request.head.sha || github.sha }}",
+        "fetch-depth": 0,
+        "persist-credentials": False,
+    }
+    names = [s.get("name") for s in job["steps"]]
+    assert names == [
+        "Checkout pull request head",
+        "Setup Python",
+        "Install Skylos",
+        "Install project test dependencies",
+        "Check the change is finished",
+    ]
+    install = job["steps"][3]["run"]
+    assert install.splitlines() == ["python -I -m pip install -e . pytest", "npm ci"]
+    done_step = job["steps"][4]
+    done_run = done_step["run"]
+    assert done_run == (
+        'skylos done --base "${MERGE_GROUP_BASE_SHA:-origin/$GITHUB_BASE_REF}"'
+    )
+    assert done_step["env"] == {
+        "MERGE_GROUP_BASE_SHA": "${{ github.event.merge_group.base_sha }}"
+    }
+    args = build_done_parser().parse_args(shlex.split(done_run)[2:])
+    assert args.base == "${MERGE_GROUP_BASE_SHA:-origin/$GITHUB_BASE_REF}"
+    assert not args.no_tests
+    assert "SKYLOS_TOKEN" not in content and "github.base_ref" not in content
+
+
+def test_done_job_can_be_left_out():
+    parsed = yaml.safe_load(generate_workflow(use_done=False))
+    assert "done" not in parsed["jobs"]
+    parsed = yaml.safe_load(generate_workflow(triggers=["push"]))
+    assert "done" not in parsed["jobs"]
+
+
+def test_header_names_the_required_checks():
+    content = generate_workflow()
+    header = content.split("\nname:", 1)[0]
+    assert all(line.startswith("#") for line in header.splitlines())
+    assert '"Skylos Quality Gate"' in header
+    assert '"Skylos Done"' in header
+    assert "first-gated-pr.md" in header
+    assert '"Skylos Done"' not in generate_workflow(use_done=False).split("\nname:")[0]
+
+
+def test_risk_review_job_runs_on_pull_requests_and_reviews():
+    content = generate_workflow(use_risk_review=True)
+    parsed = yaml.safe_load(content)
+    on = parsed.get("on") or parsed.get(True)
+    assert on["pull_request_review"] == {"types": ["submitted", "dismissed"]}
+    job = parsed["jobs"]["risk-review"]
+    assert job["name"] == "Skylos risk review"
+    # Reviews never run this job under their own event (a second check run with
+    # the required name would keep the merge blocked); the re-check job re-runs it.
+    # Merge groups run it so the required check reports in a merge queue.
+    assert job["if"] == (
+        "github.event_name == 'pull_request' || github.event_name == 'merge_group'"
+    )
+    assert job["permissions"] == {"contents": "read", "pull-requests": "read"}
+    # A merge group has no PR number; keying on it would make every merge
+    # group share one group, and GitHub cancels pending runs in a group.
+    assert job["concurrency"] == {
+        "group": "skylos-risk-review-${{ github.event.pull_request.number "
+        "|| github.event.merge_group.head_sha }}",
+        "cancel-in-progress": False,
+    }
+    assert job["steps"][0]["with"] == {
+        "ref": "${{ github.event.pull_request.head.sha || github.sha }}",
+        "fetch-depth": 0,
+        "persist-credentials": False,
+    }
+    step = job["steps"][-1]
+    assert step["run"] == (
+        'skylos cicd risk-review --base "${MERGE_GROUP_BASE_SHA:-origin/$PR_BASE_REF}"'
+    )
+    # Event values reach the shell through the environment, never inlined.
+    assert step["env"] == {
+        "PR_BASE_REF": "${{ github.event.pull_request.base.ref }}",
+        "MERGE_GROUP_BASE_SHA": "${{ github.event.merge_group.base_sha }}",
+        "GITHUB_TOKEN": "${{ github.token }}",
+    }
+    # Other jobs do not rerun on reviews.
+    assert parsed["jobs"]["skylos"]["if"] == (
+        "github.event_name != 'push' && github.event_name != 'pull_request_target' "
+        "&& github.event_name != 'pull_request_review'"
+    )
+    assert parsed["jobs"]["done"]["if"] == (
+        "github.event_name == 'pull_request' || github.event_name == 'merge_group'"
+    )
+    assert '"Skylos risk review"' in content.split("\nname:", 1)[0]
+    no_upload = yaml.safe_load(generate_workflow(use_risk_review=True, use_upload=False))
+    assert no_upload["jobs"]["skylos"]["if"] == "github.event_name != 'pull_request_review'"
+    claude = yaml.safe_load(
+        generate_workflow(use_risk_review=True, use_claude_security=True)
+    )
+    assert claude["jobs"]["claude-security"]["if"] == (
+        "github.event_name != 'pull_request_review' "
+        "&& github.event_name != 'merge_group' "
+        "&& github.event_name != 'pull_request_target'"
+    )
+
+
+def test_risk_review_is_off_by_default_and_needs_pull_requests():
+    content = generate_workflow()
+    assert "pull_request_review" not in content and "risk-review" not in content
+    parsed = yaml.safe_load(generate_workflow(use_risk_review=True, triggers=["push"]))
+    assert "risk-review" not in parsed["jobs"]
+    assert "pull_request_review" not in str(parsed.get("on") or parsed.get(True))
+
+
+def test_generated_risk_review_workflow_passes_skylos_actions_audit(tmp_path):
+    workflow = tmp_path / ".github" / "workflows" / "skylos.yml"
+    _write(workflow, generate_workflow(use_risk_review=True, use_claude_security=True))
+
+    assert scan_github_actions(tmp_path) == []
+
+
+def test_risk_review_command_parses_the_generated_step(monkeypatch):
+    from unittest.mock import Mock
+
+    from skylos.commands import cicd_cmd, risk_review_cmd
+
+    seen = {}
+
+    def fake(args, console=None):
+        seen.update(vars(args))
+        return 0
+
+    monkeypatch.setattr(risk_review_cmd, "run_risk_review", fake)
+    code = cicd_cmd.run_cicd_command(
+        ["risk-review", "--base", "origin/$PR_BASE_REF", "--format", "json"],
+        console_factory=Mock,
+        load_config_func=lambda path: {},
+        run_gate_interaction_func=Mock(),
+        emit_github_annotations_func=Mock(),
+    )
+    assert code == 0
+    assert seen["base"] == "origin/$PR_BASE_REF" and seen["format"] == "json"
+    assert seen["path"] == "."
+
+
+def test_generated_minimal_workflow_passes_skylos_actions_audit(tmp_path):
+    workflow = tmp_path / ".github" / "workflows" / "skylos.yml"
+    _write(workflow, generate_workflow(use_upload=False, use_done=False))
+
+    assert scan_github_actions(tmp_path) == []
+
+
+def _write(path, text=""):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    assert write_text_no_symlink(path, text)
+
+
+def test_detect_done_setup_installs_package_with_test_extra(tmp_path):
+    _write(
+        tmp_path / "pyproject.toml",
+        '[project]\nname = "demo"\nversion = "0"\n'
+        '[project.optional-dependencies]\ndev = ["ruff"]\ntest = ["pytest-cov"]\n'
+        "[tool.pytest.ini_options]\n",
+    )
+    setup = detect_done_setup(tmp_path)
+    assert setup == DoneSetup(
+        True,
+        "pytest project found",
+        ('python -I -m pip install -e ".[test]" pytest',),
+    )
+
+
+def test_detect_done_setup_uses_requirements_files(tmp_path):
+    _write(tmp_path / "tests" / "test_app.py", "def test_x():\n    assert True\n")
+    _write(tmp_path / "requirements.txt", "flask\n")
+    _write(tmp_path / "requirements" / "test.txt", "pytest-mock\n")
+    setup = detect_done_setup(tmp_path)
+    assert setup.enabled
+    assert setup.install_commands == (
+        "python -I -m pip install -r requirements.txt -r requirements/test.txt pytest",
+    )
+
+
+def test_detect_done_setup_skips_repositories_without_tests(tmp_path):
+    _write(tmp_path / "lib.py", "x = 1\n")
+    setup = detect_done_setup(tmp_path)
+    assert not setup.enabled
+    assert "test_command" in setup.reason
+
+
+def test_detect_done_setup_suggests_vitest_settings(tmp_path):
+    _write(tmp_path / "package.json", '{"devDependencies": {"vitest": "^3.2.0"}}')
+    setup = detect_done_setup(tmp_path)
+    assert not setup.enabled
+    assert setup.reason.startswith("Vitest found")
+    assert setup.suggested_settings == (
+        'test_command = "npx vitest run --reporter=default --reporter=junit '
+        '--outputFile.junit=reports/junit.xml"',
+        'junit_xml = "reports/junit.xml"',
+    )
+    assert setup.suggested_install == ""
+
+
+def test_detect_done_setup_suggests_jest_junit(tmp_path):
+    _write(tmp_path / "package.json", '{"devDependencies": {"jest": "^30.0.0"}}')
+    setup = detect_done_setup(tmp_path)
+    assert setup.suggested_install == "npm install --save-dev jest-junit"
+    assert setup.suggested_settings[-1] == 'junit_xml = "junit.xml"'
+
+    _write(
+        tmp_path / "package.json",
+        '{"devDependencies": {"jest": "^30.0.0", "jest-junit": "^16.0.0"},'
+        ' "jest-junit": {"outputDirectory": "<rootDir>/reports"}}',
+    )
+    setup = detect_done_setup(tmp_path)
+    assert setup.suggested_install == ""
+    assert setup.suggested_settings[-1] == 'junit_xml = "reports/junit.xml"'
+
+
+def test_detect_done_setup_prefers_pytest_and_ignores_bad_package_json(tmp_path):
+    _write(tmp_path / "package.json", "not json")
+    assert detect_done_setup(tmp_path).suggested_settings == ()
+
+    _write(tmp_path / "package.json", '{"devDependencies": {"vitest": "3"}}')
+    _write(tmp_path / "conftest.py")
+    setup = detect_done_setup(tmp_path)
+    assert setup.enabled and setup.suggested_settings == ()
+
+
+def test_detect_done_setup_honours_configured_test_command(tmp_path):
+    _write(
+        tmp_path / "pyproject.toml",
+        '[tool.skylos.done]\ntest_command = "npx vitest run"\n',
+    )
+    _write(tmp_path / "package.json", "{}")
+    _write(tmp_path / "package-lock.json", "{}")
+    setup = detect_done_setup(tmp_path)
+    assert setup.enabled
+    assert setup.reason == "[tool.skylos.done] test_command is set"
+    assert setup.install_commands[-1] == "npm ci"
+
+    _write(
+        tmp_path / "pyproject.toml",
+        '[tool.skylos.done]\ntest_command = ["python", "-m", "pytest", "-q"]\n',
+    )
+    assert detect_done_setup(tmp_path).install_commands == (
+        "python -I -m pip install pytest",
+    )
+
+
+def test_detect_done_setup_only_uses_known_test_extras(tmp_path):
+    _write(
+        tmp_path / "pyproject.toml",
+        '[build-system]\nrequires = ["setuptools"]\n'
+        '[project.optional-dependencies]\n"x; curl evil" = []\n',
+    )
+    _write(tmp_path / "conftest.py")
+    assert detect_done_setup(tmp_path).install_commands == (
+        "python -I -m pip install -e . pytest",
+    )
+
+
+def test_detect_done_setup_survives_invalid_pyproject(tmp_path):
+    _write(tmp_path / "conftest.py")
+    _write(tmp_path / "pyproject.toml", "not = [valid toml")
+    assert detect_done_setup(tmp_path).install_commands == (
+        "python -I -m pip install pytest",
+    )
+
+
+def _run_cicd_init(tmp_path, monkeypatch, *argv, git=None, console=None):
+    from unittest.mock import Mock
+
+    import skylos.commands.cicd_cmd as cicd_cmd
+
+    git = git or {}
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cicd_cmd, "_git_output", lambda *args: git.get(args, ""))
+    console = console or Mock()
+    output = tmp_path / ".github" / "workflows" / "skylos.yml"
+    exit_code = cicd_cmd.run_cicd_command(
+        ["init", "--output", str(output), *argv],
+        console_factory=lambda: console,
+        load_config_func=lambda path: {},
+        run_gate_interaction_func=Mock(),
+        emit_github_annotations_func=Mock(),
+    )
+    printed = "\n".join(
+        str(call.args[0]) for call in console.print.call_args_list if call.args
+    )
+    workflow = yaml.safe_load(output.read_text()) if output.exists() else None
+    return exit_code, workflow, printed
+
+
+def test_cicd_init_adds_done_for_pytest_projects(tmp_path, monkeypatch):
+    _write(tmp_path / "tests" / "test_app.py", "def test_x():\n    assert True\n")
+    _write(tmp_path / "requirements.txt", "requests\n")
+    exit_code, workflow, printed = _run_cicd_init(tmp_path, monkeypatch)
+
+    assert exit_code == 0
+    assert set(workflow["jobs"]) == {"skylos", "done", "cloud-upload", *PR_UPLOAD_JOBS}
+    install = workflow["jobs"]["done"]["steps"][3]["run"]
+    assert install.strip() == "python -I -m pip install -r requirements.txt pytest"
+    assert "Skylos Done" in printed and "runs your tests" in printed
+    assert "Wait for: Skylos Quality Gate, Skylos Done" in printed
+    assert "first-gated-pr.md" in printed
+    assert "git add .github/workflows/skylos.yml" in printed
+
+
+def test_cicd_init_leaves_done_out_when_tests_cannot_run(tmp_path, monkeypatch):
+    _write(tmp_path / "lib.py", "x = 1\n")
+    exit_code, workflow, printed = _run_cicd_init(tmp_path, monkeypatch)
+
+    assert exit_code == 0
+    assert "done" not in workflow["jobs"]
+    assert "not added" in printed and "--done" in printed
+    assert "Wait for: Skylos Quality Gate\n" in printed + "\n"
+
+
+def test_cicd_init_prints_done_settings_for_vitest(tmp_path, monkeypatch):
+    _write(tmp_path / "package.json", '{"devDependencies": {"vitest": "^3.2.0"}}')
+    exit_code, workflow, printed = _run_cicd_init(tmp_path, monkeypatch)
+
+    assert exit_code == 0
+    assert "done" not in workflow["jobs"]
+    assert "Vitest found" in printed
+    assert "tool.skylos.done]" in printed
+    assert "--outputFile.junit=reports/junit.xml" in printed
+    assert "commit it to your default branch" in printed
+    assert "skylos cicd init --done" in printed
+
+
+def test_cicd_init_done_and_upload_flags(tmp_path, monkeypatch):
+    _write(tmp_path / "lib.py", "x = 1\n")
+    _, workflow, printed = _run_cicd_init(
+        tmp_path, monkeypatch, "--done", "--no-upload"
+    )
+    assert set(workflow["jobs"]) == {"skylos", "done"}
+    assert "added with --done" in printed
+    assert "GitHub OIDC" not in printed
+
+    _write(tmp_path / "conftest.py")
+    _, workflow, _ = _run_cicd_init(
+        tmp_path, monkeypatch, "--no-done", "--upload", "--force"
+    )
+    assert set(workflow["jobs"]) == {"skylos", "cloud-upload", *PR_UPLOAD_JOBS}
+
+
+def test_cicd_init_risk_review_flag(tmp_path, monkeypatch):
+    _write(tmp_path / "lib.py", "x = 1\n")
+    _, workflow, printed = _run_cicd_init(tmp_path, monkeypatch, "--risk-review")
+    assert set(workflow["jobs"]) == {
+        "skylos",
+        "risk-review",
+        "risk-review-recheck",
+        "cloud-upload",
+        *PR_UPLOAD_JOBS,
+    }
+    assert "Skylos risk review" in printed
+    assert "bot approvals do not count" in printed
+    assert "Wait for: Skylos Quality Gate, Skylos risk review" in printed
+
+
+def test_cicd_init_uses_origin_head_as_default_branch(tmp_path, monkeypatch):
+    git = {
+        (
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ): "origin/trunk"
+    }
+    _, workflow, printed = _run_cicd_init(tmp_path, monkeypatch, git=git)
+    assert workflow["on"]["push"] == {"branches": ["trunk"]}
+    assert "Pushes to trunk" in printed
+    assert "No origin/HEAD" not in printed
+
+    _, workflow, printed = _run_cicd_init(tmp_path, monkeypatch, "--force")
+    assert workflow["on"]["push"] == {"branches": ["main", "master"]}
+    assert "No origin/HEAD" in printed
+
+    _, workflow, _ = _run_cicd_init(
+        tmp_path, monkeypatch, "--default-branch", "release/2026", "--force", git=git
+    )
+    assert workflow["on"]["push"] == {"branches": ["release/2026"]}
+
+
+def test_cicd_init_rejects_unsafe_default_branch(tmp_path, monkeypatch):
+    exit_code, workflow, printed = _run_cicd_init(
+        tmp_path, monkeypatch, "--default-branch", "main\n  - injected"
+    )
+    assert exit_code == 1
+    assert workflow is None
+    assert "Invalid workflow option" in printed
+
+
+def test_cicd_init_ignores_unsafe_origin_head(tmp_path, monkeypatch):
+    git = {
+        (
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ): "origin/$(id)"
+    }
+    exit_code, workflow, _ = _run_cicd_init(tmp_path, monkeypatch, git=git)
+    assert exit_code == 0
+    assert workflow["on"]["push"] == {"branches": ["main", "master"]}
+
+
+HAND_WRITTEN_WORKFLOW = "name: Hand-written\non: push\n"
+
+
+class _Terminal(io.StringIO):
+    def isatty(self):
+        return True
+
+
+def _existing_workflow(tmp_path):
+    path = tmp_path / ".github" / "workflows" / "skylos.yml"
+    _write(path, HAND_WRITTEN_WORKFLOW)
+    return path
+
+
+def _answering_console(answer):
+    from unittest.mock import Mock
+
+    console = Mock()
+    console.input.return_value = answer
+    return console
+
+
+def test_cicd_init_refuses_to_replace_a_workflow_without_a_terminal(
+    tmp_path, monkeypatch
+):
+    path = _existing_workflow(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO())
+    console = _answering_console("y")
+
+    exit_code, _, printed = _run_cicd_init(tmp_path, monkeypatch, console=console)
+
+    assert exit_code == 1
+    assert path.read_text() == HAND_WRITTEN_WORKFLOW
+    assert not list(path.parent.glob("*.bak*"))
+    console.input.assert_not_called()
+    assert "already exists" in printed
+    assert "Nothing was written" in printed and "--force" in printed
+    assert "skylos.yml.bak" in printed
+
+
+@pytest.mark.parametrize("answer", ["n", "", "no"])
+def test_cicd_init_keeps_the_workflow_when_the_user_says_no(
+    tmp_path, monkeypatch, answer
+):
+    path = _existing_workflow(tmp_path)
+    monkeypatch.setattr(sys, "stdin", _Terminal())
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    console = _answering_console(answer)
+
+    exit_code, _, printed = _run_cicd_init(tmp_path, monkeypatch, console=console)
+
+    assert exit_code == 1
+    assert path.read_text() == HAND_WRITTEN_WORKFLOW
+    assert not list(path.parent.glob("*.bak*"))
+    prompt = console.input.call_args.args[0]
+    assert "Replace it?" in prompt and "y/N" in prompt
+    assert "nothing was written" in printed
+
+
+def test_cicd_init_replaces_the_workflow_after_yes_and_keeps_a_copy(
+    tmp_path, monkeypatch
+):
+    path = _existing_workflow(tmp_path)
+    monkeypatch.setattr(sys, "stdin", _Terminal())
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    console = _answering_console("y")
+
+    exit_code, workflow, printed = _run_cicd_init(
+        tmp_path, monkeypatch, console=console
+    )
+
+    assert exit_code == 0
+    assert "jobs" in workflow
+    backup = path.parent / "skylos.yml.bak"
+    assert backup.read_text() == HAND_WRITTEN_WORKFLOW
+    assert "Kept the old workflow as" in printed and "skylos.yml.bak" in printed
+
+
+@pytest.mark.parametrize("dangling", [False, True])
+def test_cicd_init_force_refuses_workflow_symlinks(tmp_path, monkeypatch, dangling):
+    outside = tmp_path / "outside.yml"
+    if not dangling:
+        outside.write_text(HAND_WRITTEN_WORKFLOW)
+    path = tmp_path / ".github" / "workflows" / "skylos.yml"
+    path.parent.mkdir(parents=True)
+    path.symlink_to(outside)
+
+    exit_code, _, printed = _run_cicd_init(tmp_path, monkeypatch, "--force")
+
+    assert exit_code == 1
+    assert "Could not write workflow" in printed
+    assert path.is_symlink()
+    assert not list(path.parent.glob("*.bak*"))
+    if dangling:
+        assert not outside.exists()
+    else:
+        assert outside.read_text() == HAND_WRITTEN_WORKFLOW
+
+
+@pytest.mark.parametrize("parent", [".github", ".github/workflows"])
+def test_cicd_init_force_refuses_symlinked_parents(tmp_path, monkeypatch, parent):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if parent == ".github":
+        (outside / "workflows").mkdir()
+        victim = outside / "workflows" / "skylos.yml"
+    else:
+        victim = outside / "skylos.yml"
+    victim.write_text(HAND_WRITTEN_WORKFLOW)
+    link = tmp_path / parent
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(outside, target_is_directory=True)
+
+    exit_code, _, printed = _run_cicd_init(tmp_path, monkeypatch, "--force")
+
+    assert exit_code == 1
+    assert "Could not write workflow" in printed
+    assert victim.read_text() == HAND_WRITTEN_WORKFLOW
+    assert not list(victim.parent.glob("*.bak*"))
+
+
+def test_workflow_replacement_is_atomic_and_backup_preserves_bytes(
+    tmp_path, monkeypatch
+):
+    import skylos.cicd.workflow as workflow
+
+    path = tmp_path / "skylos.yml"
+    original = b"# handwritten\r\n# \xff\r\nname: Example\r\n"
+    path.write_bytes(original)
+    replacement = "name: Generated\n"
+    real_replace = workflow.os.replace
+    observed = []
+
+    def inspect_replace(source, destination, **kwargs):
+        assert path.read_bytes() == original
+        assert (path.parent / "skylos.yml.bak").read_bytes() == original
+        observed.append(True)
+        return real_replace(source, destination, **kwargs)
+
+    monkeypatch.setattr(workflow.os, "replace", inspect_replace)
+    workflow.write_workflow(replacement, str(path))
+
+    assert observed == [True]
+    assert path.read_text() == replacement
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_workflow_replace_failure_keeps_original_complete(tmp_path, monkeypatch):
+    import skylos.cicd.workflow as workflow
+
+    path = _existing_workflow(tmp_path)
+
+    def fail_replace(*args, **kwargs):
+        raise OSError("simulated replacement failure")
+
+    monkeypatch.setattr(workflow.os, "replace", fail_replace)
+    exit_code, _, printed = _run_cicd_init(tmp_path, monkeypatch, "--force")
+
+    assert exit_code == 1
+    assert "simulated replacement failure" in printed
+    assert "Workflow written" not in printed
+    assert path.read_text() == HAND_WRITTEN_WORKFLOW
+    assert (path.parent / "skylos.yml.bak").read_text() == HAND_WRITTEN_WORKFLOW
+    assert not list(path.parent.glob(".*.tmp"))
+
+
+def test_workflow_skips_symlinked_backup_and_rejects_changed_destination(tmp_path):
+    from skylos.cicd.workflow import write_workflow
+
+    path = _existing_workflow(tmp_path)
+    outside = tmp_path / "outside.yml"
+    outside.write_text("keep me\n")
+    (path.parent / "skylos.yml.bak").symlink_to(outside)
+    backup = write_workflow("name: Generated\n", str(path))
+    assert backup == path.parent / "skylos.yml.bak2"
+    assert backup.read_text() == HAND_WRITTEN_WORKFLOW
+    assert outside.read_text() == "keep me\n"
+
+    with pytest.raises(OSError, match="changed during initialization"):
+        write_workflow("name: Another\n", str(path), expected_existing=None)
+    assert path.read_text() == "name: Generated\n"
+    assert not (path.parent / "skylos.yml.bak3").exists()
+
+
+@pytest.mark.parametrize("missing", ["open", "mkdir", "link", "unlink", "rename"])
+def test_workflow_refuses_platforms_without_safe_directory_operations(
+    tmp_path, monkeypatch, missing
+):
+    import skylos.cicd.workflow as workflow
+
+    path = _existing_workflow(tmp_path)
+    monkeypatch.setattr(
+        workflow.os,
+        "supports_dir_fd",
+        workflow.os.supports_dir_fd - {getattr(workflow.os, missing)},
+    )
+
+    with pytest.raises(OSError, match="no-follow directory descriptors"):
+        workflow.write_workflow("name: Generated\n", str(path))
+
+    assert path.read_text() == HAND_WRITTEN_WORKFLOW
+    assert not list(path.parent.glob("*.bak*"))
+    assert not list(path.parent.glob(".*.tmp"))
+
+
+@pytest.mark.parametrize("missing", ["O_DIRECTORY", "O_NOFOLLOW"])
+def test_workflow_refuses_platforms_without_no_follow_flags(
+    tmp_path, monkeypatch, missing
+):
+    import skylos.cicd.workflow as workflow
+
+    path = tmp_path / ".github" / "workflows" / "skylos.yml"
+    monkeypatch.delattr(workflow.os, missing, raising=False)
+
+    with pytest.raises(OSError, match="no-follow directory descriptors"):
+        workflow.write_workflow("name: Generated\n", str(path))
+
+    assert not (tmp_path / ".github").exists()
+
+
+def test_cicd_init_force_replaces_without_asking_and_never_overwrites_a_copy(
+    tmp_path, monkeypatch
+):
+    path = _existing_workflow(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO())
+    console = _answering_console("n")
+
+    exit_code, workflow, _ = _run_cicd_init(
+        tmp_path, monkeypatch, "--force", "--no-upload", console=console
+    )
+    assert exit_code == 0
+    assert "cloud-upload" not in workflow["jobs"]
+    console.input.assert_not_called()
+
+    exit_code, workflow, _ = _run_cicd_init(tmp_path, monkeypatch, "--force")
+    assert exit_code == 0
+    assert "cloud-upload" in workflow["jobs"]
+    # The first copy still holds the hand-written workflow.
+    assert (path.parent / "skylos.yml.bak").read_text() == HAND_WRITTEN_WORKFLOW
+    assert "cloud-upload" not in (path.parent / "skylos.yml.bak2").read_text()
+
+
+def test_cicd_init_leaves_an_identical_workflow_alone(tmp_path, monkeypatch):
+    _run_cicd_init(tmp_path, monkeypatch)
+    console = _answering_console("n")
+
+    exit_code, workflow, printed = _run_cicd_init(
+        tmp_path, monkeypatch, console=console
+    )
+
+    assert exit_code == 0
+    assert "jobs" in workflow
+    assert "already up to date" in printed
+    console.input.assert_not_called()
+    assert not list((tmp_path / ".github" / "workflows").glob("*.bak*"))
+
+
+def test_skylos_init_points_to_the_pull_request_gate(tmp_path, monkeypatch):
+    from unittest.mock import Mock, patch
+
+    from skylos.commands.init_cmd import run_init_command
+
+    monkeypatch.chdir(tmp_path)
+    console = Mock()
+    with patch("skylos.commands.init_cmd.Console", return_value=console):
+        assert run_init_command() == 0
+
+    printed = [str(call.args[0]) for call in console.print.call_args_list]
+    hint = printed[-1]
+    assert "skylos cicd init" in hint
+    # Escaped, so Rich prints the table name instead of treating it as markup.
+    assert r"\[tool.skylos]" in hint
+
+
+def test_risk_review_recheck_reruns_the_pull_request_job_on_reviews():
+    import subprocess
+
+    content = generate_workflow(use_risk_review=True)
+    job = yaml.safe_load(content)["jobs"]["risk-review-recheck"]
+    assert job["name"] == "Skylos risk review (re-check after review)"
+    assert job["if"] == "github.event_name == 'pull_request_review'"
+    assert job["permissions"] == {"actions": "write", "contents": "read"}
+    step = job["steps"][0]
+    assert step["env"]["JOB_NAME"] == "Skylos risk review"
+    assert step["env"]["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}"
+    script = step["run"]
+    # Event data reaches the shell only through the environment.
+    assert "${{" not in script
+    assert "event=pull_request&head_sha=$HEAD_SHA" in script
+    assert '/actions/jobs/$job_id/rerun' in script
+    assert subprocess.run(["bash", "-n"], input=script, text=True).returncode == 0
+
+
+def test_risk_review_recheck_is_absent_without_risk_review():
+    assert "risk-review-recheck" not in yaml.safe_load(generate_workflow())["jobs"]
+
+
+
+# ---------------------------------------------------------------------------
+# merge queues (merge_group)
+# ---------------------------------------------------------------------------
+
+
+def _on(parsed):
+    return parsed.get("on") or parsed.get(True)
+
+
+def test_required_checks_also_run_on_merge_group():
+    parsed = yaml.safe_load(generate_workflow(use_risk_review=True))
+    assert _on(parsed)["merge_group"] == {"types": ["checks_requested"]}
+    jobs = parsed["jobs"]
+    # Every required check runs on merge_group under its own name.
+    assert "merge_group" not in jobs["skylos"]["if"]
+    assert "github.event_name == 'merge_group'" in jobs["done"]["if"]
+    assert "github.event_name == 'merge_group'" in jobs["risk-review"]["if"]
+    # Default-branch upload and review re-checks never run on merge groups.
+    assert jobs["cloud-upload"]["if"].startswith("github.event_name == 'push'")
+    assert jobs["risk-review-recheck"]["if"] == (
+        "github.event_name == 'pull_request_review'"
+    )
+    header = generate_workflow().split("\nname:", 1)[0]
+    assert "merge_group" in header
+
+
+def test_merge_group_gate_compares_with_the_queue_base_commit():
+    parsed = yaml.safe_load(generate_workflow())
+    steps = {s.get("name"): s for s in parsed["jobs"]["skylos"]["steps"]}
+    for name in ("Run Skylos Analysis", "Quality Gate"):
+        step = steps[name]
+        assert step["env"] == {
+            "MERGE_GROUP_BASE_SHA": "${{ github.event.merge_group.base_sha }}"
+        }
+        assert '"${{ github.event_name }}" = "merge_group"' in step["run"]
+        # An empty base never silently turns into a full, ungated scan.
+        assert (
+            'pr_base_ref="${MERGE_GROUP_BASE_SHA:?the merge_group event has no base_sha}"'
+            in step["run"]
+        )
+        assert "github.event.merge_group" not in step["run"]
+    analysis = steps["Run Skylos Analysis"]["run"]
+    assert 'export SKYLOS_POLICY_BASE="$(git merge-base "$pr_base_ref" HEAD)"' in (
+        analysis
+    )
+    assert '--diff-base "$pr_base_ref" --diff "$pr_base_ref"' in analysis
+    gate = steps["Quality Gate"]["run"]
+    assert 'skylos cicd gate . --input skylos-results.json --diff-base "$pr_base_ref"' in (
+        gate
+    )
+    # Review comments need a pull request.
+    assert steps["PR Review Comments"]["if"] == (
+        "github.event_name == 'pull_request' && always()"
+    )
+
+
+def test_merge_group_shell_selects_the_right_base(tmp_path):
+    import subprocess
+
+    parsed = yaml.safe_load(generate_workflow())
+    step = next(
+        s for s in parsed["jobs"]["skylos"]["steps"] if s.get("name") == "Quality Gate"
+    )
+    script = step["run"].replace(
+        "skylos cicd gate", 'echo "base=$pr_base_ref"; true skylos cicd gate'
+    )
+
+    def run(event, env):
+        body = script.replace("${{ github.event_name }}", event)
+        return subprocess.run(
+            ["bash", "-c", body],
+            env={"PATH": "/usr/bin:/bin", **env},
+            capture_output=True,
+            text=True,
+        )
+
+    pr = run("pull_request", {"GITHUB_BASE_REF": "main", "MERGE_GROUP_BASE_SHA": ""})
+    assert pr.returncode == 0 and "base=origin/main" in pr.stdout
+    queue = run("merge_group", {"MERGE_GROUP_BASE_SHA": "a" * 40})
+    assert queue.returncode == 0 and f"base={'a' * 40}" in queue.stdout
+    missing = run("merge_group", {"MERGE_GROUP_BASE_SHA": ""})
+    assert missing.returncode != 0 and "no base_sha" in missing.stderr
+    push = run("push", {})
+    assert push.returncode == 0 and push.stdout.strip() == "base="
+
+
+def test_no_merge_group_without_pull_requests():
+    parsed = yaml.safe_load(generate_workflow(triggers=["push"]))
+    assert "merge_group" not in _on(parsed)
+    assert "merge_group" not in generate_workflow(triggers=["schedule"])
+    explicit = yaml.safe_load(
+        generate_workflow(triggers=["pull_request", "merge_group", "push"])
+    )
+    assert _on(explicit)["merge_group"] == {"types": ["checks_requested"]}
+
+
+def test_claude_jobs_stay_off_merge_groups():
+    parsed = yaml.safe_load(generate_workflow(use_claude_security=True))
+    assert parsed["jobs"]["claude-security"]["if"] == (
+        "github.event_name != 'merge_group' "
+        "&& github.event_name != 'pull_request_target'"
+    )
+    assert parsed["jobs"]["upload-claude-findings"]["if"] == (
+        "always() && needs.skylos.result != 'skipped' "
+        "&& github.event_name != 'merge_group' "
+        "&& github.event_name != 'pull_request_target'"
+    )
+
+
+def test_generated_merge_queue_workflow_passes_skylos_actions_audit(tmp_path):
+    workflow = tmp_path / ".github" / "workflows" / "skylos.yml"
+    _write(
+        workflow,
+        generate_workflow(use_risk_review=True, use_upload=False, use_done=True),
+    )
+    assert scan_github_actions(tmp_path) == []
