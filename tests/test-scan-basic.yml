@@ -1,0 +1,35 @@
+name: Test scan mode on clean code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean
+          mode: scan
+          analysis: dead-code
+      - name: Assert report written and valid
+        env:
+          REPORT_PATH: ${{ steps.action.outputs.report-path }}
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "report-path: $REPORT_PATH"
+          echo "findings-count: $COUNT"
+          if [ "$REPORT_PATH" != "skylos-report.json" ]; then
+            echo "FAIL: expected report-path skylos-report.json"
+            exit 1
+          fi
+          if [ ! -s "$GITHUB_WORKSPACE/skylos-report.json" ]; then
+            echo "FAIL: report file missing or empty"
+            exit 1
+          fi
+          python3 -c "import json; json.load(open('$GITHUB_WORKSPACE/skylos-report.json'))" || { echo "FAIL: invalid JSON"; exit 1; }
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not a number"
+            exit 1
+          fi
+          echo "PASS"

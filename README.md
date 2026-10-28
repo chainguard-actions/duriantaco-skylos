@@ -1,60 +1,1330 @@
-# duriantaco/skylos
+<div align="center">
+    <img src="assets/DOG_1.png" alt="Skylos" width="160">
+    <h1>Skylos</h1>
+    <p><strong>Code checks that show their work.</strong></p>
+</div>
 
-SAST, dead code detection, secrets scanning, and PR gating for Python, TypeScript, Java, and Go.
+## What Is Skylos?
 
-Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at [https://github.com/duriantaco/skylos](https://github.com/duriantaco/skylos).
+Skylos is an open-source (Apache-2.0) CLI and pull-request gate for Python
+projects that runs without an account. `skylos .` finds dead code: unused
+functions, classes, imports and empty files. Add `-a` to check security bugs,
+hard-coded secrets, vulnerable dependencies, code quality and AI-code
+mistakes. Findings include source locations and supporting analysis;
+`skylos done` checks whether a branch, often a coding agent's, is ready to
+merge.
 
-## Versions
+It is built for:
 
-| Version | Tag | Upstream commit | Hardening report |
-|---------|-----|-----------------|------------------|
-| v4.22.1 | [`v4.22.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.22.1) | [`5dc5b53`](https://github.com/duriantaco/skylos/commit/5dc5b53babf0df0c76e3f4b0d6d7071db6575eef) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.22.1/HARDENING.md) |
-| v4.23.0 | [`v4.23.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.23.0) | [`4f8947c`](https://github.com/duriantaco/skylos/commit/4f8947c5f284af205e972fffdee62718a7fac701) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.23.0/HARDENING.md) |
-| v4.24.0 | [`v4.24.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.24.0) | [`420b566`](https://github.com/duriantaco/skylos/commit/420b566f8600c8e01240fdf15831e95ba6a4082d) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.24.0/HARDENING.md) |
-| v4.24.1 | [`v4.24.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.24.1) | [`0823fd2`](https://github.com/duriantaco/skylos/commit/0823fd22093dbf3c82383ef2878e7ec14f9be3d6) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.24.1/HARDENING.md) |
-| v4.24.2 | [`v4.24.2`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.24.2) | [`20fba7b`](https://github.com/duriantaco/skylos/commit/20fba7b723040b517b0163629e08d643db1faf65) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.24.2/HARDENING.md) |
-| v4.26.1 | [`v4.26.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.26.1) | [`f3b9cf8`](https://github.com/duriantaco/skylos/commit/f3b9cf89ff4a1e30d6964e381167db227eab6622) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.26.1/HARDENING.md) |
-| v4.27.0 | [`v4.27.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.27.0) | [`cd4f952`](https://github.com/duriantaco/skylos/commit/cd4f9523ebbd78ab6aa5acfe4060bcda4ccbbef7) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.27.0/HARDENING.md) |
-| v4.28.0 | [`v4.28.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.28.0) | [`1f3826d`](https://github.com/duriantaco/skylos/commit/1f3826d384f92483f815c2e53e0de1a8c4eefc6a) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.28.0/HARDENING.md) |
-| v4.29.0 | [`v4.29.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.29.0) | [`83ee5f1`](https://github.com/duriantaco/skylos/commit/83ee5f124827169d5eb6831bd96f2ead48c053d8) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.29.0/HARDENING.md) |
-| v4.30.0 | [`v4.30.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.30.0) | [`8522289`](https://github.com/duriantaco/skylos/commit/85222895b37b7627587abacb6baa111c5561c0c2) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.30.0/HARDENING.md) |
-| v4.31.0 | [`v4.31.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.31.0) | [`c5400bc`](https://github.com/duriantaco/skylos/commit/c5400bcceb3f48505aeb5a2da7a724dbf1fca6da) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.31.0/HARDENING.md) |
-| v4.31.1 | [`v4.31.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.31.1) | [`4b2ace6`](https://github.com/duriantaco/skylos/commit/4b2ace6f19e6f12262fd03e2c6bcbbbaaa3648ce) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.31.1/HARDENING.md) |
-| v4.32.0 | [`v4.32.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.32.0) | [`4417f89`](https://github.com/duriantaco/skylos/commit/4417f89aac9609b24460918349a5f828b6e181c2) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.32.0/HARDENING.md) |
-| v4.33.0 | [`v4.33.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.33.0) | [`5adc29e`](https://github.com/duriantaco/skylos/commit/5adc29e765c0663aff9dc6807b82fffe60ba51ba) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.33.0/HARDENING.md) |
-| v4.33.1 | [`v4.33.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.33.1) | [`161ca3d`](https://github.com/duriantaco/skylos/commit/161ca3de7e85b8c1574f685e8e9bfd415e2ed40c) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.33.1/HARDENING.md) |
-| v4.33.2 | [`v4.33.2`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.33.2) | [`de23f0c`](https://github.com/duriantaco/skylos/commit/de23f0c52a21c724fdbdcdaa340fc573676e9f6a) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.33.2/HARDENING.md) |
-| v4.34.0 | [`v4.34.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.34.0) | [`f6dbaeb`](https://github.com/duriantaco/skylos/commit/f6dbaeb361e0d97622e83b2e9281e5462f395c2f) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.34.0/HARDENING.md) |
-| v4.35.0 | [`v4.35.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.35.0) | [`89d33c0`](https://github.com/duriantaco/skylos/commit/89d33c0e856f3451eb88c7f60410051ded8d3109) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.35.0/HARDENING.md) |
-| v4.36.0 | [`v4.36.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.36.0) | [`2c963dc`](https://github.com/duriantaco/skylos/commit/2c963dcec8097bb6e931819804e817f32f49a5b0) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.36.0/HARDENING.md) |
-| v4.36.1 | [`v4.36.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.36.1) | [`9f0dfc7`](https://github.com/duriantaco/skylos/commit/9f0dfc74cb9c7cc7d73e187a74b655eb396d57f2) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.36.1/HARDENING.md) |
-| v4.37.0 | [`v4.37.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.37.0) | [`2d899e6`](https://github.com/duriantaco/skylos/commit/2d899e605b98f935b86476ab2e0e208c5bbf5062) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.37.0/HARDENING.md) |
-| v4.38.0 | [`v4.38.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.38.0) | [`d8288c5`](https://github.com/duriantaco/skylos/commit/d8288c5837793e2c51be869714573ebb7f2a044d) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.38.0/HARDENING.md) |
-| v4.39.0 | [`v4.39.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.39.0) | [`ba4c85f`](https://github.com/duriantaco/skylos/commit/ba4c85f963e56053684f1a7eb3d8fc7aa09e8458) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.39.0/HARDENING.md) |
-| v4.39.1 | [`v4.39.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.39.1) | [`0c95b00`](https://github.com/duriantaco/skylos/commit/0c95b002424453983d5c96708cf7865939745d98) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.39.1/HARDENING.md) |
-| v4.39.2 | [`v4.39.2`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.39.2) | [`6d1ac3d`](https://github.com/duriantaco/skylos/commit/6d1ac3de35dfff5b53b840b9080f5fa44db6b29e) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.39.2/HARDENING.md) |
-| v4.40.0 | [`v4.40.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.40.0) | [`0a42d5c`](https://github.com/duriantaco/skylos/commit/0a42d5c3432221951cc6ab3024916811041b78cf) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.40.0/HARDENING.md) |
-| v4.41.0 | [`v4.41.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.41.0) | [`81c06b4`](https://github.com/duriantaco/skylos/commit/81c06b499c0c4e9b8a4c583542f2e0cce8b4bd1f) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.41.0/HARDENING.md) |
-| v4.42.0 | [`v4.42.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.42.0) | [`041e872`](https://github.com/duriantaco/skylos/commit/041e872c9189c131a6b75b3f9007594ec800bb11) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.42.0/HARDENING.md) |
-| v4.43.0 | [`v4.43.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.43.0) | [`2ceffe2`](https://github.com/duriantaco/skylos/commit/2ceffe2bc8b35f5f5cf948bb5021e7f2271b0ae4) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.43.0/HARDENING.md) |
-| v4.43.1 | [`v4.43.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.43.1) | [`d12b378`](https://github.com/duriantaco/skylos/commit/d12b3785bb85e3593bec5e66f06048c6ded568cb) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.43.1/HARDENING.md) |
-| v4.43.2 | [`v4.43.2`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.43.2) | [`fc5fffd`](https://github.com/duriantaco/skylos/commit/fc5fffd2bad9ebeb2c215b140868c9b84a4751be) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.43.2/HARDENING.md) |
-| v4.44.0 | [`v4.44.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.44.0) | [`14dfba2`](https://github.com/duriantaco/skylos/commit/14dfba20247ce1ac0eccf4eeb7407319496dc4b6) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.44.0/HARDENING.md) |
-| v4.45.0 | [`v4.45.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.45.0) | [`3af22c5`](https://github.com/duriantaco/skylos/commit/3af22c52b27375b1bde87f93768f032afb90c8cf) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.45.0/HARDENING.md) |
-| v4.46.0 | [`v4.46.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.46.0) | [`a0fdd09`](https://github.com/duriantaco/skylos/commit/a0fdd09f0ec32826b23bb241210e876f98701f37) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.46.0/HARDENING.md) |
-| v4.47.0 | [`v4.47.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.47.0) | [`a87654f`](https://github.com/duriantaco/skylos/commit/a87654f1675f7a2d61a2170349ae15cd165a44c0) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.47.0/HARDENING.md) |
-| v4.47.1 | [`v4.47.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.47.1) | [`d2f8d6a`](https://github.com/duriantaco/skylos/commit/d2f8d6a123603724ebfb3838907b69cb0b20aaf4) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.47.1/HARDENING.md) |
-| v4.47.2 | [`v4.47.2`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.47.2) | [`abb2eab`](https://github.com/duriantaco/skylos/commit/abb2eab0172fc8ac7f7013e03e6e54d68f30d008) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.47.2/HARDENING.md) |
-| v4.48.0 | [`v4.48.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.48.0) | [`71777cd`](https://github.com/duriantaco/skylos/commit/71777cd1994fa1bfd5f0ab90a57d36ac45f1e611) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.48.0/HARDENING.md) |
-| v4.49.0 | [`v4.49.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.49.0) | [`2949e8f`](https://github.com/duriantaco/skylos/commit/2949e8f56472100c4756bfa416d9658f3c070b13) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.49.0/HARDENING.md) |
-| v4.49.1 | [`v4.49.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.49.1) | [`42d7309`](https://github.com/duriantaco/skylos/commit/42d73098fe7730580e9217561991d2301d6d60aa) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.49.1/HARDENING.md) |
-| v4.50.0 | [`v4.50.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.50.0) | [`8807890`](https://github.com/duriantaco/skylos/commit/88078907963f76fe8971cbd69e4a4f6975d8a900) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.50.0/HARDENING.md) |
-| v4.50.1 | [`v4.50.1`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v4.50.1) | [`beb6518`](https://github.com/duriantaco/skylos/commit/beb6518c90071ebe6326fca6c262161758ebd44d) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v4.50.1/HARDENING.md) |
-| v5.0.0 | [`v5.0.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v5.0.0) | [`85227d1`](https://github.com/duriantaco/skylos/commit/85227d186026d6f85bb592460c2e9a4ff3d42778) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v5.0.0/HARDENING.md) |
-| v5.1.0 | [`v5.1.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v5.1.0) | [`bab257f`](https://github.com/duriantaco/skylos/commit/bab257fa347d106778c84216749eae15d4ddd3f6) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v5.1.0/HARDENING.md) |
-| v5.1.2 | [`v5.1.2`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v5.1.2) | [`90ddb7f`](https://github.com/duriantaco/skylos/commit/90ddb7f21a3af4163cd722882cfd8844b07ea96e) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v5.1.2/HARDENING.md) |
-| v5.1.3 | [`v5.1.3`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v5.1.3) | [`59c2551`](https://github.com/duriantaco/skylos/commit/59c255176f6e67115eb52c3e7f01f2240c6b8434) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v5.1.3/HARDENING.md) |
-| v5.1.4 | [`v5.1.4`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v5.1.4) | [`e90c3c9`](https://github.com/duriantaco/skylos/commit/e90c3c9b08d00d89aa77807d3943ee1dc41fceb5) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v5.1.4/HARDENING.md) |
+- **Teams merging pull requests from AI coding agents** such as Claude Code,
+  Codex and Cursor. `skylos done` runs your tests and flags deleted or skipped
+  tests, loosened CI test steps, silenced lint or type checks, and test-only
+  special cases.
+- **Python maintainers** who want framework-aware dead-code, security and
+  secrets checks. Python has the deepest coverage; other languages are listed
+  under [Language Support](#language-support).
+
+```bash
+pip install skylos
+skylos .                  # find dead code
+skylos . -a               # add security, secrets, quality, dependency and AI-code checks
+skylos done --base main   # is this branch finished? runs your tests, compares with main
+```
+
+**Proof, including the misses:** 10 Skylos-assisted dead-code cleanup PRs have
+been merged into the default branch in 9 open-source
+projects, including Black, NetworkX, Optuna, mitmproxy and pypdf.
+[Real-World Results](./REAL_WORLD_RESULTS.md) lists the 26 cleanup and quality-fix PRs in this ledger,
+including the ones that were closed, reverted or never reached the default
+branch. These are accepted cleanup
+PRs, not endorsements.
+
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.duriantaco%2Fskylos.svg)](https://mcptoplist.com/server/io.github.duriantaco%2Fskylos)
+![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
+[![codecov](https://codecov.io/gh/duriantaco/skylos/branch/main/graph/badge.svg)](https://codecov.io/gh/duriantaco/skylos)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/skylos)
+[![PyPI version](https://img.shields.io/pypi/v/skylos)](https://pypi.org/project/skylos/)
+![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/oha.skylos-vscode-extension)
+
+[Website](https://skylos.dev) |
+[Docs](https://docs.skylos.dev) |
+[Repo Map](https://duriantaco.github.io/skylos/repo-map/) |
+[Quick Start](https://docs.skylos.dev/quick-start) |
+[GitHub Action](./action.yml) |
+[VS Code Extension](./editors/vscode/README.md) |
+[Real-World Results](./REAL_WORLD_RESULTS.md) |
+[Benchmarks](./BENCHMARK.md) |
+[Roadmap](./ROADMAP.md) |
+[Contributing](./CONTRIBUTING.md)
+
+**English** | [Deutsch](./docs/i18n/README.de.md) | [简体中文](./docs/i18n/README.zh-CN.md) | [Translations](./docs/i18n/README.md)
+
+Skylos runs locally by default and can also gate pull requests in CI. Use it
+when you want one command to check a repo or pull request for:
+
+- dead code and unused files
+- security flaws and dangerous data flows
+- secrets and dependency CVEs
+- CI/CD and edge-device deployment misconfigurations
+- quality regressions such as complexity, duplicate branches, and deep nesting
+- common AI-generated code mistakes, including missing guards, fake helpers,
+  invented package APIs, and impossible dependency versions
+- LLM app risks such as unsafe tool use and missing output validation
+
+Python has the deepest coverage. TypeScript/JavaScript and Java also get
+dead-code, security and quality checks; PHP and Dart get dead-code and
+security checks; Rust gets security checks and experimental dead code
+(hidden below the default confidence threshold; `--confidence 40` lists it).
+Go dead-code and security checks need the native `skylos-go` engine: from
+4.50 the PyPI wheels for Linux, macOS and Windows (x86_64 and arm64) include
+it, the container image includes it and the GitHub Action builds it. On other
+platforms `skylos doctor` prints the command that builds it from source, and
+`SKYLOS_GO_BIN` points Skylos at a separately built engine. C# support is
+partial, Kotlin is dead code only, C++ is limited to unused file-local
+functions, and Shell is security only.
+Skylos also checks CI/CD and deployment config. See
+[Language Support](#language-support).
+
+## Read The Results
+
+Remember **Risk, Maintainability, Dead code, Gate**:
+
+| Readout | What it tells you |
+|:---|:---|
+| **Risk** | Highest unresolved severity and counts. One critical finding stays critical, regardless of repository size. |
+| **Maintainability** | Advice counts, affected code units, and how far measurements exceed their limits. |
+| **Dead code** | Removal candidates with confidence and evidence; review dynamic calls and public APIs before deleting. |
+| **Gate** | Whether findings satisfy your configured limits. Passing means within policy, not zero findings. |
+
+Finding **Type** is separate from severity: **Defect** is a concrete correctness
+pattern, **Review** needs context, and **Advice** concerns maintainability or
+tooling. A Review finding can still be critical. Advice stays visible in rule
+groups; `--expand-advice` shows every location and JSON keeps complete records.
+Grouping cannot improve the assessment or bypass a gate.
+
+Security findings show recorded source-to-sink evidence when available, with
+partial static analysis labeled. Dependency coverage names unresolved versions
+and the supported inputs needed to check them. Neither view claims runtime
+exploitability or a complete installed environment; JSON keeps the full evidence.
+
+For `uv.lock`, valid Git, URL, path and private-index dependencies are shown as
+**not checked**. Skylos still queries supported public packages; the coverage
+gap alone does not cause exit `2`. It cannot establish a clean dependency
+assessment. See [uv source coverage](./docs/dependency-scanning.md#uv-source-coverage).
+
+New source scans replace the blended A–F grade with these readouts. Disabled
+checks are **not assessed**; failed checks are **incomplete**. Maintainability
+percentages use only the relevant units actually measured, with no guessed
+denominators or uncalibrated grades. The independent `debt` and `defend` scores
+keep their meanings. See [the output guide](./docs/cli-output.md#scan-assessment).
+
+## Choose the Right Command
+
+Each command answers a different question. The source scan requires `PATH`.
+Bracketed paths on `verify`, `suite`, `defend`, and `clean` default to the
+current directory. `suite` and `defend` require a directory; `verify` and
+`clean` also accept a file.
+
+| Question | Command | Input checked |
+|:---|:---|:---|
+| What problems are in this source tree? | `skylos PATH` | Source files and project configuration; dead code by default, every main source analyzer with `-a` |
+| How is this branch doing on Skylos Cloud? | `skylos cloud [PATH]` | Every main source analyzer, then the findings are uploaded and the branch's quality gate is printed with one link |
+| Did the agent really finish this branch? | `skylos done --base main` | The branch's changes since its merge base with `main`: Skylos runs your tests (pytest automatically; other runners need `test_command` in `[tool.skylos.done]`) and compares the tests, test settings and CI steps with the base; writes a receipt to `.skylos/receipts/` |
+| What does this change touch, and what should I read first? | `skylos done map --base main` | Each changed Python or TypeScript/JavaScript function since the merge base, with old and new code, calls added and removed, its callers and removed security checks; computed from the code, so the same commit gives the same map |
+| Does this code contain AI-code mistakes? | `skylos verify [PATH]` | AI-defect checks over the selected file or tree, plus a separate Git HEAD behavior comparison for supported Python working changes |
+| Should a model review static dead-code findings? | `skylos agent verify [PATH]` | LLM by default; optional [Jev-only or Jev-plus-LLM review](./docs/dead-code-review.md) |
+| What does the combined repo suite report? | `skylos suite [DIRECTORY]` | Static analysis, technical debt, AI defense, and provenance; local findings are report-only by default |
+| Does an agent implementation have deployment guardrails? | `skylos defend [DIRECTORY]` | Recognized Python and TypeScript/JavaScript LLM integrations; gating requires a threshold flag or policy |
+| Which Python dead code can Skylos remove? | `skylos clean [PATH] --dry-run` | Python import/function cleanup candidates; `--dry-run` never writes |
+| Will this exact local GPU build fit the machines we ship to? | `skylos preflight [ARTIFACT]` | A local built file or directory and `.skylos/gpu-targets.yml`; an OCI reference is identity-only and returns `UNKNOWN` in the CLI |
+| What vulnerabilities are in this container image? | `skylos image scan IMAGE@sha256:<digest> --platform os/arch` | A remote registry image scanned by a separately installed Trivy; `--fail-on` turns findings into a gate |
+
+Run `skylos --help` for this chooser, `skylos <command> --help` for one
+command, and `skylos commands` for the command-family map.
+
+The report commands have different gate and network behavior:
+
+- `image scan` requires Trivy on trusted `PATH` and uses Trivy's remote image
+  source, so registry network access and any required registry credentials must
+  already be available. Without `--fail-on`, a completed scan exits `0` even
+  when it reports vulnerabilities.
+- `suite` runs in the local process and does not upload unless `--upload` is
+  set, but its dependency scan can query OSV. Findings are report-only: the
+  command exits `0` regardless of their count. Operational and output failures
+  are nonzero; `--upload` can also fail for an upload error or Cloud quality
+  gate.
+- `defend` reports guardrail findings by default. It becomes a gate with
+  `--fail-on`, `--min-score`, or gate settings in an explicit policy.
+- `clean` without `--dry-run` or `--apply` is interactive and can write after
+  the final confirmation. Its current codemods support Python imports and
+  functions. An apply pass still exits `0` if an individual edit prints a
+  failure, so review the completion output.
+- `done` exits `0` on pass, `1` when a blocking check fails or does not
+  finish, and `2` when Skylos could not run (for example, the base is not
+  fetched). It reads its settings from the base commit, so a change cannot
+  loosen its own gate.
+
+## Start In 60 Seconds
+
+```bash
+pip install skylos
+skylos .            # find problems; your code and findings stay on your machine
+skylos cloud        # optional: track results per branch on Skylos Cloud
+skylos cicd init    # add a Skylos check to every pull request
+```
+
+That is the whole path. When `skylos .` finds issues, it ends by naming the
+next command.
+
+`skylos cloud` runs every check, shows the findings, uploads them and prints
+this branch's quality gate with one link to it:
+
+```text
+✗ Quality gate on feat/login: FAILED (was PASSED on 24 Oct 15:38 UTC, 1ba9895) · 1 critical security issue
+  Open: https://skylos.dev/dashboard/projects/<project>?branch=feat%2Flogin
+  Next: fix the issues behind the failed gate, then run skylos cloud again.
+```
+
+The first run opens your browser to log in and pick the project for this repo.
+It sends findings with file paths and code snippets of up to 7 lines (none for
+secrets), the branch, the commit, the git author email of each flagged line,
+and a map of your functions and classes (names, files, lines, sizes, which
+calls which). Not your repository. It exits `0` even when the Skylos Cloud gate
+fails; add `--gate` to exit `1` (use that in CI). You never need a key to pass
+the gate: fix the issues that fail it. See [Skylos Cloud](./docs/skylos-cloud.md) for the other
+Cloud commands.
+
+Before 4.47.2, `pip install skylos` also installs a Dart parser that builds
+from source and needs a C compiler. From 4.47.2, Dart support is the optional
+`skylos[dart]` extra. If the install fails for lack of a compiler, use the
+[container image](#install-options).
+
+Optional Rust acceleration can be [built from source](./rust/README.md).
+The standard installation uses Python fallbacks. See the build guide for
+accelerated operations and possible differences in findings.
+
+The default scan focuses on dead code. Run every main source analyzer,
+including security, secrets, quality, dependency, and AI-defect checks, with
+`-a`:
+
+```bash
+skylos . -a
+```
+
+Check whether a branch, often an AI agent's, is really finished:
+
+```bash
+skylos done --base main
+```
+
+`skylos done` compares the branch with its merge base on `main` and runs your
+tests. It flags deleted or skipped tests, loosened test settings and CI test
+steps, silenced lint or type checks, and code that special-cases the tests,
+advises on code the branch left without callers (including in files it did
+not touch), then writes a receipt to `.skylos/receipts/`. When tests fail, it
+reruns them on the merge base and labels each failure "introduced" or "already
+failing"; every failure still blocks by default. It runs pytest automatically;
+other test runners need one `test_command` line in `[tool.skylos.done]`. See
+the [done gate guide](./docs/done-gate.md) for every check and its limits.
+
+Run only evidence-backed AI defect checks with:
+
+```bash
+skylos . --ai-defects
+```
+
+Verify a repository, file, or range before an agent hands it to review:
+
+```bash
+skylos verify . --file src/app.py --range 40:75 --project-context
+```
+
+For a directory such as `.`, the AI-defect scan covers the selected tree. The
+separate `behavior` result models supported Python working-tree changes against
+Git HEAD; it is not the scope selector for the AI-defect scan. Dependency
+hallucination checks are enabled for path targets and can query package
+registries; use `--no-dependency-hallucinations` to disable those lookups.
+High/critical security findings (`category: "security"`) and hard-coded
+secrets (`category: "secret"`, value redacted) in the selected file/range also
+fail verification; use `--no-security` for the AI-code-only verdict.
+Interactive terminals get a human report. Redirected stdout and `-o` produce
+the versioned JSON result.
+
+`skylos verify` schema version 2 returns `pass`, `fail`, or `incomplete`.
+`incomplete` means a requested proof could not be established, such as a
+missing local TS/JS import, computed namespace member, unsupported language-local
+API check, or parser surface that Skylos could not prove; it exits `2` unless
+`--no-fail` is set. The `coverage` object lists detected languages, expected
+checks, language support, missing checks, completed/skipped checks, checked
+references, and deterministic skip reasons. Declared third-party dependencies
+and recognized Node built-ins are outside the local TS/JS API proof; their
+references are counted in `out_of_scope_references` and do not make a clean
+verification incomplete. Unknown bare imports still require review.
+
+Deterministic local/workspace API verification currently covers Python,
+TypeScript/JavaScript, Go, and Java without executing target code. PHP, Rust,
+Dart, C#, Kotlin, and Shell retain their existing static-analysis coverage,
+but their local API proof is reported as unsupported and therefore incomplete.
+See [AI Code Verification Coverage](./docs/ai-code-verification.md).
+
+Create a local AI hallucination contract for repo-specific generated-code
+truth. `skylos verify` auto-discovers `.skylos/ai-contract.yml`:
+
+```bash
+skylos contract init
+skylos contract inspect
+skylos verify .
+```
+
+Test a running agent against deterministic response and tool-use scenarios:
+
+```bash
+skylos agent init
+skylos agent test --allow-contract-endpoint
+```
+
+Create a project config with thresholds, ignores, template hooks, and vibe
+dictionary extensions:
+
+```bash
+skylos init
+```
+
+Create a starter local rule pack:
+
+```bash
+skylos rules init
+skylos rules validate .skylos/rules/local.yml
+skylos rules list --json
+skylos rules list cross --json
+skylos rules list --packs --json
+skylos cache stats
+```
+
+<a id="cicd"></a>
+
+Gate pull requests with GitHub Actions. No Skylos account or token is
+needed:
+
+```bash
+git checkout -b add-skylos-gate
+skylos cicd init --no-upload
+git add .github/workflows/skylos.yml
+git commit -m "Add Skylos pull request gate"
+git push -u origin add-skylos-gate
+gh pr create --fill
+```
+
+The generated workflow reviews changed lines on pull requests and adds a
+`skylos done` job when it finds your tests. Without `--no-upload`, it also
+adds a Skylos Cloud upload job for pushes to your default branch, which fails
+until the Skylos GitHub App is installed on the repository.
+[Your first Skylos-gated pull request](./docs/first-gated-pr.md) walks through
+it in about 8 minutes, including making the checks required.
+
+On GitLab CI, Jenkins, Bitbucket Pipelines, Azure Pipelines or CircleCI, the
+same `skylos cicd init` sets up a pull request gate for that CI instead; see
+[Skylos on any CI](./docs/ci-platforms.md).
+
+The gate (`skylos . --gate`, `skylos cicd gate`, and the generated workflow)
+fails on any critical security issue, any secret, and any critical AI-code
+issue, such as an import of a package that does not exist on PyPI (SKY-D222)
+or a call to a function that is never defined or imported (SKY-L012). Other
+findings fail it only above count limits. Change the limits under
+`[tool.skylos.gate]` in `pyproject.toml`:
+
+```toml
+[tool.skylos.gate]
+max_high = 5          # high-severity security issues allowed
+max_quality = 10      # quality issues allowed
+max_ai_defects = 10   # AI-code issues allowed (defaults to max_quality)
+# AI-code issues at these severities fail the gate whatever max_ai_defects
+# allows. Add "HIGH" to block more; [] turns the rule off.
+block_ai_defect_severities = ["CRITICAL"]
+```
+
+`max_ai_defects` and `block_ai_defect_severities` are separate checks; the
+gate fails if either one fails. In a pull request, `skylos cicd gate
+--diff-base` reads this policy from the base branch, so a pull request cannot
+turn the rule off for itself. A gate policy synced from Skylos Cloud replaces
+the repository's `[tool.skylos.gate]` section.
+
+Every gate run ends with one verdict line and the reasons behind it:
+`Quality Gate: PASSED`, `Quality Gate: FAILED` (exit 1), or
+`Quality Gate: INCOMPLETE — could not decide (exit 2)` when required analysis
+did not finish, for example a lockfile the dependency scan could not resolve.
+Each reason names the check that stopped, how many files or dependencies it
+missed, and what to change. A file that does not parse is a coverage warning
+under the verdict, not a reason to stop: the limits are evaluated on everything
+else (set `require_complete = true` under `[tool.skylos.gate.coverage]` to fail
+instead). `--format json` carries the same verdict in a
+top-level `gate` object; concise, LLM, GitHub, and GitLab output print it on
+stderr. See [Exit Codes And Incomplete Analysis](./docs/cli-output.md#exit-codes-and-incomplete-analysis).
+
+Need more commands? Read the [CLI Reference](https://docs.skylos.dev/cli-reference).
+
+## Check Every Agent Edit (Claude Code, Codex, Cursor)
+
+Install local hooks so the agent is checked while it works, not after:
+
+```bash
+skylos agent install-hooks            # Claude Code (.claude/settings.json)
+skylos agent install-hooks --codex    # Codex (.codex/hooks.json)
+skylos agent install-hooks --cursor   # Cursor (.cursor/hooks.json)
+```
+
+- **After each edit:** verifies only the changed lines (security, secrets,
+  AI-code mistakes) and tells the agent what to fix.
+- **Before a file read:** blocks files that contain hard-coded secrets.
+- **Before a package install or one-shot run** (`pip`, `uvx`, `npx`,
+  `pnpm dlx`, `bunx`, `go run pkg@v`, ...): blocks hallucinated or
+  typosquatted packages, and asks before installs it cannot verify (git and
+  URL sources, unknown registries, failed lookups).
+- **Before a git command:** blocks `--no-verify`, `HUSKY=0` and other ways
+  around the repository's git hooks.
+- **At stop:** blocks "done" while issues the agent added are still open.
+
+Hooks fail open, but never silently: if Skylos errors, the agent and you are
+told the action was allowed without a check, and `stop` reports how many went
+unchecked. They log to `.skylos/hook.log` and merge with your existing hooks.
+`--uninstall` removes only the Skylos entries. See
+[Agent-loop hooks](./docs/agent-hooks.md) for the contract, latency, and
+limits.
+
+In Cursor, findings arrive at `stop` rather than after each edit. The hooks
+are not a sandbox: they check edits, file reads and package installs, not
+every command. See [what they don't do](./docs/agent-hooks.md#what-it-doesnt-do).
+
+## Common Workflows
+
+| Goal | Command | What You Get | More Detail |
+|:---|:---|:---|:---|
+| First dead-code scan | `skylos .` | Finds unused functions, classes, imports, files, and framework entrypoint mistakes | [Dead code docs](https://docs.skylos.dev/dead-code-detection) |
+| Deterministic cleanup preview | `skylos clean . --dry-run --types import,function --confidence 80` | Shows planned Python import/function removals without writing; add `--apply` to edit files | [Dead code docs](https://docs.skylos.dev/dead-code-detection) |
+| Security and quality audit | `skylos . -a` | Adds dangerous flow, secrets, dependency, config, quality, and AI-defect checks | [Security docs](https://docs.skylos.dev/security-analysis) |
+| Combined repo report | `skylos suite .` | Reports static findings, technical debt, AI defense, and provenance; SCA can query OSV, and findings alone exit `0` | [CLI Reference](https://docs.skylos.dev/cli-reference) |
+| Optional Python linting | `pip install "skylos[lint]" && skylos lint .` | Runs Ruff with its native configuration, output, fixes, and exit codes through the Skylos CLI | [Python linting](./docs/python-linting.md) |
+| Agent branch done check | `skylos done --base origin/main` | Runs your tests and flags deleted, skipped or weakened tests, loosened test settings and CI test steps, silenced checks, and test-only special cases; writes a receipt | [Done gate](./docs/done-gate.md) |
+| Change map for review | `skylos done map --base origin/main` | Old and new code of each changed Python or TypeScript/JavaScript function, calls added and removed, who calls it and whether those callers were updated, removed auth checks, breaking signatures, and the changes to read first; `--format json` for a review agent | [Change map](./docs/change-map.md) |
+| MCP change map | `change_map` MCP tool | Gives a review agent the change map as JSON before it reads the diff. Requires a free Skylos API key (`SKYLOS_API_KEY`). `skylos done map` needs no key | [Change map](./docs/change-map.md#in-the-agent-loop) |
+| Risks that need a human approval | `skylos cicd risk-review --base origin/main` | Lists deleted or weakened tests, removed auth checks, added or changed dependencies, weakened CI, silenced checks, added secrets, guardrail setting edits, migration changes and very large diffs. As a required GitHub check (`skylos cicd init --risk-review`) it fails until a person with write access approves the head commit; bot approvals do not count | [Risk review](./docs/risk-review.md) |
+| PR gate | `skylos cicd init --no-upload` | Sets up the pull request gate for your CI. On GitHub Actions it writes a workflow that gates pull requests and runs `skylos done` when your tests can run; drop `--no-upload` to also upload default-branch scans to Skylos Cloud with GitHub OIDC, and that job fails until the Skylos GitHub App is installed on the repository. GitLab CI, Jenkins, Bitbucket Pipelines, Azure Pipelines and CircleCI get a gate for that CI | [First gated PR](./docs/first-gated-pr.md), [Skylos on any CI](./docs/ci-platforms.md) |
+| GitLab merge request report | `skylos . --format gitlab -o gl-code-quality-report.json` | Exports a native Code Quality report for GitLab CI artifacts | [GitLab Code Quality](./docs/gitlab-code-quality.md) |
+| Offline dependency SBOM | `skylos sbom . -o sbom.cdx.json` | Lists supported recorded dependencies as CycloneDX 1.6 JSON without network requests | [Dependency scanning](./docs/dependency-scanning.md#export-an-sbom-offline) |
+| SPDX SBOM + license policy | `skylos sbom . --format spdx-json` / `license_deny = ["GPL-*"]` | SPDX 2.3 JSON with declared licenses; `SKY-SCA-LIC001` flags denied licenses in `-a` scans | [License compliance](./docs/license-compliance.md) |
+| Signed verdict deploy gate | `skylos verify-verdict verdict.json --commit "$SHA" --repository github.com/org/repo --require-repository-verified --require-trusted-upload --max-age 7d --require-passed` | Verifies a Skylos Cloud check verdict offline (Ed25519 DSSE, in-toto/SLSA) and fails unless it is a recent policy pass for that commit and repository; needs `skylos[verdict]` | [Verify a signed verdict](./docs/verify-verdict.md) |
+| Readable terminal report | `skylos . --format pretty` | Groups findings by file with severity badges, snippets, and copyable `file:line` locations | [CLI output modes](./docs/cli-output.md) |
+| Single-rule review | `skylos . --select SKY-L012 --format concise` | Enables the matching analyzer family and reports only that exact rule with its full message | [CLI output modes](./docs/cli-output.md) |
+| Selectable terminal triage | `skylos . --tui` | Opens a keyboard-driven category list, finding list, and detail pane | [CLI output modes](./docs/cli-output.md) |
+| IDE/test-script output | `skylos --format concise src/test.py` | Prints untruncated `file:line  RULE_ID  message` findings and exits non-zero when findings exist | [CLI Reference](https://docs.skylos.dev/cli-reference) |
+| In-loop AI-code verification | `skylos verify . --file src/app.py --range 40:75` | Reports a narrow set of hallucinated helpers, unfinished code, stale references, disabled controls, and API/dependency hallucinations; JSON is used for redirected or `-o` output | [AI features](https://docs.skylos.dev/ai-features) |
+| AI hallucination contracts | `skylos contract init && skylos verify .` | Auto-discovers `.skylos/ai-contract.yml` and verifies generated code against repo-specific symbols, dependencies, APIs, route guards, and test requirements | [AI Hallucination Contracts](./docs/ai-hallucination-contracts.md) |
+| Changed-lines review | `skylos . -a --diff origin/main` | Keeps findings focused on active work instead of legacy debt. A removed security control (SKY-L021, such as a deleted auth decorator) is still reported, even when the change only deletes the decorator line | [Quality gate docs](https://docs.skylos.dev/quality-gate) |
+| Incumbent scanner comparison | `skylos compare . --against incumbent.sarif` | Runs Skylos beside the current scanner and produces a revision-aware scorecard: active overlap, raw unique findings by category, and eligible findings inside evidence-backed unused symbols, without replacing the current gate | [Scanner comparison](./docs/scanner-comparison.md) |
+| Runtime-assisted dead-code check | `skylos . --trace` | Uses runtime traces to reduce dynamic-code false positives | [Smart tracing](https://docs.skylos.dev/smart-tracing) |
+| Local rule pack | `skylos rules init` | Scaffolds YAML rules for project-specific security and quality checks | [Custom rules](https://docs.skylos.dev/custom-rules) |
+| Security agent quick scan | `skylos agent security-quick .` | One-shot LLM security audit; compatibility alias for `skylos agent scan . --security` | [AI features](https://docs.skylos.dev/ai-features) |
+| Security agent deep scan | `skylos agent security-deep .` | Three-stage security workflow with threat-model context, static threat traces, discovery/validation, and remediation handoff | [AI features](https://docs.skylos.dev/ai-features) |
+| AI-assisted review | `skylos agent scan .` | Static analysis plus optional LLM review and fix suggestions | [AI features](https://docs.skylos.dev/ai-features) |
+| Agent harness replay | `skylos agent replay .skylos/runs/<run-id>` | Validates and summarizes saved agent verification phases, tool calls, decisions, and budgets | [Agent harness artifacts](#agent-harness-artifacts) |
+| Runtime agent behavior test | `skylos agent init && skylos agent test --allow-contract-endpoint` | Checks final responses, tool selection, explicit refusals, and source IDs against a versioned contract | [Agent Behavior Testing](./docs/agent-behavior-testing.md) |
+| Verification-backed remediation | `skylos agent remediate .` | Scans and fixes supported findings, then re-scans them and records proof-test metadata when available | [AI features](https://docs.skylos.dev/ai-features) |
+| Agent-loop hooks | `skylos agent install-hooks [--codex\|--cursor]` | Verifies every agent edit, blocks secret reads, hallucinated package installs and git-hook bypasses, asks before unverifiable installs, and holds "done" while new issues are open | [Agent-loop hooks](./docs/agent-hooks.md) |
+| Project standards for agents | `skylos agent install-standards --enforce SKY-L002` | Gives Codex, Claude Code, and Cursor a project skill and selects measurable quality rules for hook and CI checks | [Project standards](./docs/agent-standards.md) |
+| MCP agent verification | `verify_change` MCP tool | Lets Claude, Cursor, and other MCP clients verify an edited file/range with the same schema as `skylos verify`. Requires a free Skylos project token (`SKYLOS_API_KEY`). `skylos verify` and agent-loop hooks need no token | [MCP server](https://docs.skylos.dev/mcp-server) |
+| LLM integration inventory | `skylos discover .` | Maps recognized LLM calls, agent tools, prompt sites, and input sources in Python and TypeScript/JavaScript | [Agent verification](./docs/agent-verification.md) |
+| Pre-deployment agent verification | `skylos defend . --format md -o evidence.md` | Verifies agent guardrails, scores OWASP LLM/Agentic coverage, and emits an attested evidence report | [Agent verification](./docs/agent-verification.md) |
+| Agent verification CI gate | `skylos defend . --fail-on critical` | Blocks deploys with unguarded LLM integrations; SARIF for code scanning via `--format sarif` | [Agent verification](./docs/agent-verification.md) |
+| MCP agent pre-flight | `verify_agent` MCP tool | Lets coding agents statically verify the agents they build — scores, failed checks, attestation digest. Requires a free Skylos project token (`SKYLOS_API_KEY`). `skylos defend` needs no token | [MCP server](https://docs.skylos.dev/mcp-server) |
+| Technical debt triage | `skylos debt .` | Ranks hotspots and debt trends | [Technical debt](https://docs.skylos.dev/technical-debt) |
+
+## What Skylos Catches
+
+| Category | Examples | Why It Matters |
+|:---|:---|:---|
+| Dead code | unused functions, classes, imports, package entrypoints, route handlers | reduces maintenance cost without breaking dynamic frameworks |
+| Security flaws | SQL injection, XSS, SSRF, path traversal, command injection, unsafe deserialization | catches exploitable flows before code reaches main |
+| Secrets | API keys, tokens, private credentials, high-entropy strings | prevents credentials from leaking through commits and PRs |
+| CI/CD workflows | GitHub Actions and GitLab CI dangerous triggers, unpinned actions/includes, broad tokens, OIDC misuse, cache poisoning, mutable images | reduces CI/CD supply-chain risk before release jobs run |
+| Edge deployment config | Docker Compose privileged device access, host networking, systemd root services, broad capabilities, missing sandboxing | catches repo-controlled settings that turn app bugs into device compromise |
+| Kubernetes deployment exposure | Explicitly external Ingress paths reaching a sensitive FastAPI/Flask route without its deployment-required guard, Flask `--debug`, or an application server using `--reload` | reports only when the resources are in one rendered bundle and every deployment edge resolves unambiguously |
+| GPU release compatibility | source/build contract mismatches plus built-artifact identity, selected CUDA architecture, packaged runtime, and fleet checks | catches declared intent errors early and verifies the resulting local artifact before release |
+| Quality regressions | complexity, deep nesting, duplicate branches, long functions, inconsistent returns | keeps AI-assisted refactors from adding brittle code |
+| AI code mistakes | phantom security calls, missing decorators, unfinished stubs, disabled controls, real packages called with invented APIs, impossible npm/Go versions | catches common hallucinated or incomplete code paths before they reach review |
+| LLM app risks | unsafe tool use, prompt injection exposure, missing output validation, missing rate limits | helps teams ship AI features with guardrails |
+
+See the full [Rules Reference](https://docs.skylos.dev/rules-reference).
+
+### Dependency licenses
+
+`skylos sbom .` writes declared dependency licenses into CycloneDX, and
+`skylos sbom . --format spdx-json` writes an SPDX 2.3 SBOM. Licenses come from
+lockfiles and installed package metadata, offline. Unknown or ambiguous values
+(such as `BSD`) stay `NOASSERTION` rather than being guessed. `--license-lookup`
+opts in to a deps.dev query. To block licenses in `-a` scans, set a policy:
+
+```toml
+[tool.skylos]
+license_deny = ["GPL-*", "AGPL-3.0-only"]
+license_severity = "HIGH"
+```
+
+Violations are reported as `SKY-SCA-LIC001`. See
+[License compliance](./docs/license-compliance.md).
+
+## Give Coding Agents Project Standards
+
+Create `.skylos/standards.md` with the guidance you want agents to follow:
+
+```markdown
+# Coding standards
+
+- Keep functions focused and handle exceptions explicitly.
+- Add a focused test when changing behavior.
+```
+
+Then install the project skill and choose any Skylos quality rules to enforce:
+
+```bash
+skylos agent install-standards --enforce SKY-L002
+skylos agent install-hooks --codex   # use --cursor for Cursor, or omit for Claude Code
+skylos agent check-standards .       # run this project-wide check in CI
+```
+
+The installer writes `SKILL.md` files for Codex, Cursor, and Claude Code.
+Agent skills provide guidance; the hooks and project-wide check enforce the
+selected built-in quality rules. See [project standards](./docs/agent-standards.md)
+for the generated files, rule selection, and coverage limits.
+
+## Verify AI Agents Before They Ship
+
+Runtime guardrails are the WAF; Skylos is the SAST. `skylos discover` scans
+Python and TypeScript/JavaScript for recognized LLM integrations (provider
+SDKs, agent frameworks including the OpenAI Agents SDK, Claude Agent SDK, and
+Google ADK, MCP servers and their tools, direct HTTP calls to LLM APIs or
+OpenAI-compatible gateways, plus agent tools, prompt sites, and input
+sources). `skylos defend` checks the guardrails around those detected
+integrations deterministically, in the local process, with no model in the
+loop. It emits evidence by default and becomes a CI gate only when a threshold
+flag or policy supplies gate criteria.
+
+```bash
+skylos discover .                               # inventory LLM integrations and agent tools
+skylos defend .                                 # score guardrails (13 weighted checks)
+skylos defend . --format md -o evidence.md      # auditor evidence report + attestation
+skylos defend . --format sarif -o defend.sarif  # GitHub code scanning upload
+skylos defend . --fail-on critical              # CI gate: exit 1 on critical gaps
+skylos defend . --owasp-framework agentic       # report against OWASP Agentic ASI Top 10
+```
+
+These commands do not inspect integrations in other languages. If discovery
+finds no supported integration, `defend` returns an empty inventory; do not
+treat the resulting score by itself as proof that an unsupported or
+unrecognized agent implementation has guardrails.
+
+Per integration it verifies: dangerous output sinks (eval/exec/subprocess),
+agent tool scope and typed schemas, prompt-injection exposure (delimiters,
+untrusted input paths, RAG context isolation), output validation, PII
+filtering, and model pinning — plus ops checks (logging, cost controls, rate
+limiting) scored separately so they never inflate the security score.
+
+- **OWASP mapping:** LLM Top 10 (2024/2025) and Agentic ASI Top 10 (2026).
+- **Evidence report (`--format md`):** integration inventory, per-check
+  results, OWASP coverage, regulatory framework evidence (EU AI Act, NIST AI
+  RMF, ISO/IEC 42001 — "evidence toward" mappings, never compliance claims),
+  and a remediation appendix.
+- **Attestation:** JSON/md/SARIF reports carry a reproducible SHA-256 digest
+  over file contents, policy, plugin set, integration inventory, scores, and
+  full check evidence — re-run on the same tree with the same flags and Skylos
+  version, and the digest must match.
+- **CI-native:** `skylos cicd init --defend` generates the GitHub Actions workflow step, the
+  `skylos-defend` pre-commit hook gates locally, and `$GITHUB_STEP_SUMMARY`
+  gets a score summary automatically in Actions.
+- **Policy as code:** `skylos-defend.yaml` pins gate thresholds and severity
+  overrides (`--policy`).
+- **Agent-native:** the `verify_agent` MCP tool lets coding agents verify the
+  agents they build — deterministic verification, not AI checking AI.
+
+Static pre-deployment verification complements runtime controls (gateways,
+policy engines, human approval flows); it does not replace them. Full guide:
+[docs/agent-verification.md](./docs/agent-verification.md).
+
+## Test Running Agent Behavior
+
+Skylos separates generated-code truth, static agent guardrails, and observed
+runtime behavior:
+
+| Command | Verification question |
+|:---|:---|
+| `skylos verify` | Did the agent generate valid, non-hallucinated code? |
+| `skylos defend` | Does the agent implementation contain the required guardrails? |
+| `skylos agent test` | Did the running agent behave according to its contract? |
+
+Create `.skylos/agent-test.yml`, then test a live OpenAI-compatible endpoint:
+
+```bash
+skylos agent init
+skylos agent test --allow-contract-endpoint
+```
+
+Or evaluate captured evidence without a network call:
+
+```bash
+skylos agent test --observations agent-observations.json
+skylos agent test --observations agent-observations.json \
+  --format json --output agent-results.json
+```
+
+Version 1 deterministically checks exact response substrings, required,
+allowed, and forbidden tool calls, tool arguments and sequence, maximum call
+count, explicit refusals, and explicit source IDs. Missing typed evidence is
+`incomplete`, never `pass`; exit codes are `0` pass, `1` violation, and `2`
+incomplete/invalid. Tool selection and final-answer source-ID checks are separate
+one-turn scenarios: Skylos records local replayable evidence but never executes
+tools returned by the target agent. Offline observations are marked as
+unverified fixtures rather than runtime proof.
+
+For an authenticated remote endpoint, keep the destination and secret choice
+in the trusted CLI invocation:
+
+```bash
+skylos agent test --endpoint https://agent.example.com/v1/chat/completions \
+  --allow-remote --auth-env MY_AGENT_API_KEY
+```
+
+Full guide: [docs/agent-behavior-testing.md](./docs/agent-behavior-testing.md).
+
+## How Skylos Fits
+
+Skylos is not a replacement for every specialized scanner. It is a local-first
+repo and PR checker that puts several common review checks behind one CLI.
+
+- **Framework-aware dead code detection:** FastAPI, Django, Flask, pytest,
+  SQLAlchemy, Next.js (App/Pages Router files and metadata routes), React,
+  Laravel (auto-discovered commands, listeners, components, factories, seeders),
+  Drupal (classes named in an extension's YAML, discovered plugins, OOP hooks,
+  procedural hooks in `.module`/`.install`/`.inc`/`.theme` files, post-update
+  functions),
+  tool config files, package entrypoints, and common plugin patterns.
+- **PR-focused output:** diff scanning, CI thresholds, GitHub annotations, and
+  baselines for existing findings.
+- **Local-first operation:** core analysis executes locally and does not upload
+  source or call an LLM. Dependency/CVE checks can query OSV or package
+  registries, and direct container scanning contacts a registry through Trivy.
+  See [What Leaves Your Machine](#what-leaves-your-machine).
+- **AI-assisted change review:** checks for removed validation, auth, logging,
+  CSRF, rate limiting, timeouts, real-package API hallucinations, and other
+  guardrails in generated or edited code.
+- **Agent-loop verification:** `skylos verify` and MCP `verify_change` use a
+  versioned result schema for AI-code trust, security, and secret findings, so
+  coding agents can self-correct before a human sees the change. The CLI
+  renders a human report on a terminal and JSON when redirected or written
+  with `-o`.
+- **Evidence-backed AI defects:** `--ai-defects` and full scans put strict
+  AI-code failure checks under `ai_defects`, including phantom references, fake
+  package APIs, nonexistent packages, impossible dependency versions, and
+  weakened test assertions.
+  The category/tag is `ai_defect`; several rules intentionally keep historical
+  `SKY-L` or `SKY-D` IDs for suppression and baseline compatibility, while new
+  AI-defect-only checks use `SKY-A`.
+- **Verification-backed remediation:** security fixes are checked by re-running
+  analysis, and supported findings can include targeted regression-test proof
+  metadata.
+- **Project-specific rules:** add local YAML rules and extend prompt, credential,
+  sensitive-file, and timeout dictionaries from config.
+- **One command surface:** dead code, security, secrets, dependency, quality,
+  technical debt, agent review, and pre-deployment agent verification commands
+  share the same CLI.
+
+## What Leaves Your Machine
+
+**Skylos sends nothing to Skylos Cloud unless the command or flag you ran says
+it talks to Skylos Cloud:** `skylos cloud`, `--upload`, `skylos login`, `whoami`, `project`,
+`sync`, `credits`, `upload`, `ingest claude-security`, `verify-verdict`,
+`feedback`, or the `--verify` scan option. A token on its own (`SKYLOS_TOKEN`, a saved
+`skylos login`, a CI OIDC token) never makes a command upload a scan,
+findings or a run summary. There is no update check and no analytics.
+
+- `skylos agent scan`, `agent verify`, `agent remediate` and
+  `agent remediate --standards` send a run summary only with `--upload`: one
+  `POST /api/agent-runs` with `command`, per-command counts, `model`,
+  `provider`, `duration_seconds`, `commit_hash`, `branch`, `actor` and
+  `status`. `actor` is `SKYLOS_ACTOR`, the CI-reported user, or the `HEAD`
+  commit's author, else `null`; never your operating-system user name. No
+  source, paths, finding text, prompts or model output.
+- Three things reach Skylos Cloud without such a command, and none sends
+  code or findings: a scan downloads your Cloud custom rules when a token can
+  be found (`SKYLOS_CUSTOM_RULES='[]'` skips it); `skylos doctor` checks your
+  credit balance (`--format json` skips it); and the MCP server started with
+  `SKYLOS_API_KEY` checks the key every 15 minutes and deducts credits for
+  paid tools.
+- `skylos feedback` makes no request itself: it opens a form on skylos.dev
+  (or, with `--github`, GitHub's issue form) in your browser. The page
+  address carries the Skylos version, OS, Python version and the last failed
+  command with paths and secrets masked; your message is sent only when you
+  press Send.
+- Package lookups on other hosts send package names and versions, never
+  source: OSV for dependency checks, and PyPI, npm, the Go proxy and JSR for
+  packages that don't exist (on by default in `skylos done`, `skylos verify`,
+  `agent scan`, `agent pre-commit` and the agent hooks). Dependency checks
+  can also fetch GitHub fix commits, with `GITHUB_TOKEN` if it is set. LLM
+  commands send code excerpts to the model provider you configure, and
+  `skylos cicd review` posts PR comments through `gh`.
+
+Every request, its trigger and its off switch:
+[docs/privacy-and-network.md](./docs/privacy-and-network.md).
+
+## Agent Harness Artifacts
+
+`skylos agent verify .` and `skylos agent test` record replayable artifacts
+under `.skylos/runs/<run-id>` and print the run directory in table output. JSON
+output includes the same harness summary under the `harness` key.
+
+Use `skylos agent replay .skylos/runs/<run-id>` to validate and inspect a saved
+run without making LLM calls. Add `--format json` when another agent or CI job
+needs machine-readable status. A valid replay exits `0`; an invalid or corrupt
+artifact set exits `1` with issue codes. Replay output includes
+`schema_version` so CI and agents can detect artifact-contract changes.
+Replay checks internal consistency and corruption; artifacts are not signed and
+are not proof against an actor that can rewrite the entire run directory.
+
+Each run directory contains:
+
+- `events.jsonl`: chronological run, phase, and tool-call events.
+- `state.json`: full observable state, including phases, tool calls, decisions,
+  and budget usage.
+- `summary.json`: compact status, counts, budget, and artifact paths.
+- `behavior-results.json`: normalized runtime assertions, provenance, coverage,
+  and a digest-bound evidence report for `skylos agent test` runs.
+
+The current harness state is observable and replay-validated. It is not yet a
+resume mechanism for continuing interrupted verification runs.
+
+## Install Options
+
+```bash
+# Core static analysis
+pip install skylos
+
+# LLM-powered agent workflows
+pip install "skylos[llm]"
+
+# Ruff Python linting through `skylos lint`
+pip install "skylos[lint]"
+
+# Ed25519 verification for `skylos verify-verdict`
+pip install "skylos[verdict]"
+
+# Dart analysis, 4.47.2 and later (builds the Dart parser from source; needs a C compiler)
+pip install "skylos[dart]"
+
+# All published optional extras
+pip install "skylos[all]"
+```
+
+Container image:
+
+```bash
+docker pull ghcr.io/duriantaco/skylos:latest
+docker run --rm -v "$PWD":/work -w /work ghcr.io/duriantaco/skylos:latest . --json --no-provenance
+```
+
+The unqualified image uses Python 3.14. Runtime-specific tags are also
+published for Python 3.11 through 3.14, so container scans can match a local or
+CI parser exactly:
+
+```bash
+docker run --rm -v "$PWD":/work -w /work ghcr.io/duriantaco/skylos:latest-python3.13 . --json --no-provenance
+```
+
+If a Python file cannot be parsed, Skylos names it as not analysed, marks
+coverage incomplete, and reports every other finding; the file is never
+treated as clean. The exit code is decided on the code that was analysed;
+`--strict` exits 2 instead, and so does a scan where most of the code could
+not be analysed. See [Exit Codes And Incomplete Analysis](./docs/cli-output.md#exit-codes-and-incomplete-analysis).
+
+See [Installation](https://docs.skylos.dev/installation) for source installs,
+container usage, and optional dependencies.
+
+## Configure Templates And Vibe Checks
+
+Run `skylos init` to add these sections to `pyproject.toml`:
+
+```toml
+[tool.skylos]
+exclude = ["node_modules", "dist"]
+
+[tool.skylos.templates]
+# security = ".skylos/templates/security.md"
+# quality = ".skylos/templates/quality.md"
+# security_audit = ".skylos/templates/security_audit.md"
+# review = ".skylos/templates/review.md"
+
+[tool.skylos.vibe]
+extra_phantom_names = ["verify_enterprise_auth"]
+extra_phantom_decorators = ["tenant_admin_required"]
+extra_credential_names = ["tenant_signing_secret"]
+extra_network_timeout_calls = ["vendor_sdk.fetch"]
+
+[tool.skylos.dead_code]
+entrypoints = []
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+name = ["create", "pre_hook", "post_hook"]
+parent = { name = "Main", base_classes = ["Application"] }
+path = "src/**"
+reason = "project framework lifecycle hook"
+
+[tool.skylos.contribution]
+collect_local_signals = false
+contribute_public_corpus = false
+structural_signatures_only = true
+include_source = false
+```
+
+Template files extend Skylos' built-in prompts; they do not replace the
+JSON-only output contract or untrusted-code safety rules. Vibe dictionary
+extensions let teams teach Skylos about local fake-auth helpers, project
+credential names, sensitive files, and network calls that must set timeouts.
+Dead-code entrypoints let teams mark proprietary framework classes, lifecycle
+methods, and decorator-registered functions as live using precise rules for
+type, name, path, decorators, base classes, and parent classes.
+Rules must include a symbol selector such as `name`, `decorators`,
+`base_classes`, or `parent`; `path` and `module` only narrow the match.
+Contribution signals are off by default; when enabled, Skylos records local
+structural accept/dismiss/learn events under `.skylos/contribution/` without raw
+source.
+
+**Where settings come from.** Skylos walks up from the scan path to the
+repository root (the folder with `.git`) and reads, in each folder, the first
+of these that exists:
+
+1. `.skylos.toml`
+2. `skylos.toml`
+3. `pyproject.toml` with a `[tool.skylos]` table (a `pyproject.toml` without
+   one is skipped, so it no longer hides the settings above it)
+
+`skylos.toml` takes the same keys as `[tool.skylos]`, at the top level, so
+TypeScript, Go and Java repositories need no `pyproject.toml`:
+
+```toml
+# skylos.toml
+exclude = ["generated", "dist"]
+
+[gate]
+max_security = 0
+
+[done]
+test_command = "npm test"
+```
+
+In a monorepo every file found on the way up applies: the repository root is
+the base and the file nearest the scanned folder wins per key. A key set in a
+package replaces the root's value (lists are replaced, not concatenated);
+tables such as `[gate]` merge key by key. Set `root = true` in a package's file
+to ignore everything above it. `skylos doctor` lists the files in use, nearest
+first, and the ones it ignored. In PR CI, settings come from the base commit
+only, with the same rules, and `skylos done` reports an added or edited
+`skylos.toml` as a change to Skylos settings (SKY-A114). `[done]` and
+`[approval]` settings are read from the repository root's file.
+
+To use one file instead of discovery, pass `--config-file PATH` or set
+`SKYLOS_CONFIG_FILE`; it may use `[tool.skylos]`, `[skylos]`, or (when named
+`skylos.toml`) top-level keys. Synced Skylos Cloud policy keeps its protected
+precedence over repository-controlled config. The top-level
+`[tool.skylos].exclude` list applies to the main scan and commands such as
+`skylos debt` and `skylos clean`; pass `--exclude` for command-local additions
+or `--include-folder` to override an excluded folder.
+
+A full scan skips generated and vendored files (Django migrations,
+`static/**/lib/**`, `*.min.js`, `*.min.css`, vendored-library banners) and says
+how many in one line of output. Set `include_generated = true` under
+`[tool.skylos]` (or pass `--include-generated`) to scan them; see
+[What a full scan leaves out](docs/cli-output.md#what-a-full-scan-leaves-out).
+
+## Language Support
+
+| Language | Dead Code | Security | Quality | Local API Proof (`verify`) | Notes |
+|:---|:---:|:---:|:---:|:---:|:---|
+| Python | Yes | Yes | Yes | Supported | strongest coverage; framework-aware static analysis and optional tracing |
+| TypeScript / JavaScript | Yes | Yes | Yes | Supported | Tree-sitter parsing, package graph reachability, framework conventions |
+| Java | Yes | Yes | Yes | Supported | Tree-sitter parsing, structured security-flow analysis, conservative static-member proof |
+| Go | Yes¹ | Partial¹ | Partial | Supported | native engine status remains separate from deterministic workspace API proof |
+| PHP | Yes | Yes | No | Unsupported | PHP parser coverage, type and docblock references, Laravel and Drupal conventions (including `.module`/`.install`/`.inc`/`.theme` files), plus taint-style security sinks and sources (Drupal request and Form API input into SQL strings, `Markup::create()` and inline Twig templates) |
+| Rust | Experimental⁴ | Yes | No | Unsupported | Rust parser coverage plus security sink/source checks |
+| Dart | Yes³ | Yes³ | No | Unsupported | Dart parser coverage plus selected security sinks and sources |
+| C# | Partial | Partial | Partial | Partial | C# symbols, direct-block unreachable code, selected security sinks, and direct NuGet inventory |
+| C++ | Partial | No | No | Unsupported | conservative unused file-local functions in `.cpp`, `.cc`, `.cxx`; C++ headers are parsed for references |
+| Kotlin | Yes | No² | No | Unsupported | Kotlin symbol extraction with conservative static-analysis coverage |
+| Shell | No | Yes | No | Unsupported | shell-script security checks for command injection, SSRF, and path traversal |
+
+¹ Go dead-code and security checks need the native `skylos-go` engine. From
+4.50 the PyPI wheels for Linux, macOS and Windows (x86_64 and arm64) include
+it; the container image includes it and the official GitHub Action builds it.
+Elsewhere, `skylos doctor` prints the command that builds it. Without it only
+Go quality checks run and the Go files are reported as not analysed; see the
+Go engine note below.
+
+² No built-in Kotlin security rules; secret scanning still covers `.kt` and
+`.kts` files.
+
+³ From 4.47.2, Dart checks need the optional `skylos[dart]` extra
+(`pip install "skylos[dart]"`); earlier releases install the Dart parser by
+default. The parser has no prebuilt wheels, so installing it needs a C
+compiler. Without it, a scan that includes `.dart` files reports them as not
+analysed (`SKY-ANALYSIS-INCOMPLETE`, incomplete coverage) instead of skipping
+them silently; `skylos doctor` shows whether Dart support is installed.
+
+⁴ Rust dead code is experimental: trait-method calls, `pub` items used across
+crates, re-exports, macros and `#[bench]` functions are not resolved, and a
+hand-checked sample on ripgrep found no true positives. Rust candidates are
+capped at confidence 40, below the default threshold, so they are not listed
+unless you pass `--confidence 40`; the scan says so in one line. `rustc`'s
+own `unused_imports` and `dead_code` lints cover private items.
+
+"No" means Skylos has no built-in rules of that kind for the language.
+
+C# dead-code findings are conservative: in a complete executable or web
+application scan, unreferenced public types and methods are low-confidence
+candidates; library APIs, protected members, and known framework or configured
+entry points remain externally reachable. C# source-file reachability is not
+implemented. Quality scanning detects statements after unconditional
+`return`, `throw`, `break`, or `continue` in a direct block; it is not full
+control-flow analysis. Security coverage includes selected tainted-input
+sinks and generic secret scanning of `.cs` files when `--secrets` or `-a` is
+enabled. Interpolated raw-string expressions are not yet followed by C# taint
+analysis. SCA inventories direct NuGet `PackageReference` entries in `.csproj`
+files. Only unconditional exact `Version` pins (`[version]`) without local
+`Update`/`Remove` mutations, not `VersionOverride` or centrally managed
+versions, can be checked against
+advisories. Ordinary NuGet version values are minimum bounds, so without a
+resolved lockfile their installed versions and vulnerability status remain
+unknown. Transitive packages are not inventoried.
+
+Java security analysis follows directly implemented request-data helpers in
+same-package files or source files identified by exact imports or fully qualified
+names under a verified local source root. Helper reads are bounded and reject
+symlinks; no Java code or build scripts are executed. This is not full classpath
+or recursive helper analysis. Unknown helpers are not assumed to be request
+sources or sanitizers.
+
+C++ analysis covers `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, and `.hxx`. The first
+release reports only apparently unused file-local free functions. Without a
+build configuration, it cannot fully resolve templates, overloads, macros, or
+external usage; these findings are a conservative heuristic, not a proof of
+C++ deadness. Ambiguous `.h` files and C files are not analyzed as C++.
+
+Java weak-hash checks also follow local algorithm variables and values loaded
+through `java.util.Properties` from literal classloader resources. Resource
+lookup stays within the matching `src/main/resources` or `src/test/resources`
+directory. Missing resources, unsupported loaders/layouts, conflicting branch
+values, and unresolved mutations remain unknown. Properties are used only as
+crypto evidence, never to prove a security guard or choose a safe branch. This
+does not resolve arbitrary runtime classpaths, JAR resources, or environment
+overrides.
+
+TypeScript and JavaScript dead code analysis recognizes `package.json` entry
+fields, including `bin`. For targets under `dist/` or `out/`, it checks the
+matching `src/` location first, then the package root, before the declared
+output. This also covers `dist/bin/palee.js` mapping to `bin/palee.ts` and
+`dist/src/index.js` mapping to `src/index.ts`. If both source locations exist,
+the `src/` mapping keeps priority; unrelated files are not treated as entries.
+
+For ESM build scripts invoked by package scripts, Skylos also follows top-level
+esbuild calls using unchanged constants, spreads, templates, Node path helpers,
+and simple literal-array maps. Build scripts are never executed. Nested build
+calls and filesystem-generated entry lists remain unsupported and may still
+produce unused-file findings.
+
+VitePress configs at `.vitepress/config.*` and `.vitepress/config/index.*`
+are recognised as development entrypoints for `.js`, `.ts`, `.mjs` and `.mts`.
+Other files in `.vitepress` still need a reference or another entrypoint rule.
+Existing directory conventions such as `scripts/` work with native Windows
+separators too; this does not add general discovery of commands in CI workflows.
+
+Vue single file components (`.vue`) are skipped by source analysis, including
+when passed explicitly. Skylos does not yet parse their `<script>` or
+`<script setup>` blocks; separate JavaScript, TypeScript and backend source
+files are still analyzed. Existing browser script and event references in
+templates are unaffected.
+
+Go dead-code and security checks require the native `skylos-go` engine. If
+Skylos discovers Go files but cannot run that engine, it names them as not
+analysed, marks coverage incomplete and never reports them as clean. A few
+stray `.go` files are a coverage warning; when most of the code is Go the scan
+exits `2`. Run `skylos doctor` to verify engine availability: it prints the
+version-matched build command, and `SKYLOS_GO_BIN` points Skylos at a
+separately built engine. The container image includes the engine and the
+official GitHub Action builds it automatically.
+
+See [Rules Reference](https://docs.skylos.dev/rules-reference) for rule families
+and scanner scope.
+
+## Config And Deployment Support
+
+| Surface | Files | Security Scope |
+|:---|:---|:---|
+| GitHub Actions | `.github/workflows/*.yml`, `.github/workflows/*.yaml`, `action.yml`, `action.yaml` | dangerous triggers, token permissions, unpinned actions, template injection, secrets, OIDC, cache, and artifact policy |
+| GitLab CI | `.gitlab-ci.yml` | mutable images, unpinned includes, literal secrets, untrusted eval, Docker-in-Docker, OIDC, cache, timeout, and runner-tag policy |
+| Dockerfile | `Dockerfile`, `Dockerfile.*`, `*.dockerfile` | dangerous `RUN` commands, remote `ADD` without checksum, and literal build `ARG` / `ENV` secrets |
+| Edge Docker Compose | `compose*.yml`, `compose*.yaml`, `docker-compose*.yml`, `docker-compose*.yaml` | privileged containers, broad host device/control mounts, GPU/device runtime, and host networking |
+| Edge systemd | `*.service` | root edge services, mutable `ExecStart` paths, missing sandboxing, broad capabilities, and broad device access |
+| Rendered Kubernetes exposure | one multi-document `*.yml` or `*.yaml` bundle plus a contracted Python source file | opt-in proof from an Ingress annotated `skylos.dev/network-scope: external` (or `public`) and `skylos.dev/backend-protocol: http` through its Service and workload; `SKY-DEP001` checks direct top-level FastAPI/Flask routes against `skylos.dev/source-file` and `skylos.dev/required-guards`, `SKY-DEP002` catches an effective Flask debugger, and `SKY-DEP003` catches effective reload mode |
+| GPU release contract | `.skylos/gpu-targets.yml`, Dockerfiles, CMake/CUDA build files, TensorRT source | static target-fleet checks for driver, compute-architecture, and serialized-engine compatibility; no hardware probing |
+
+With `--danger` or `-a`, a directory scan inside a Git worktree also checks
+that worktree's root `.github/workflows/*.yml` / `*.yaml` and `.gitlab-ci.yml`.
+For example, `skylos src --danger` checks the CI configuration that applies
+to `src` while keeping source, container and deployment analysis in `src`.
+Unrelated staged or unstaged edits do not narrow a full scan. Explicit diff
+filters still select changed configuration files; a single-file scan stays
+limited to that file. See [scan scope](./docs/cli-output.md#repository-ci-scope).
+
+## Other Workflows
+
+These workflows cover narrower jobs: container images, Kubernetes deployment
+exposure, and GPU release artifacts.
+
+| Goal | Command | What You Get | More Detail |
+|:---|:---|:---|:---|
+| Container-image scan | `skylos image scan IMAGE@sha256:<digest> --platform linux/amd64 --fail-on high` | Uses separately installed Trivy, registry network/auth, and an explicit severity gate for a pinned remote image | [Container-image scanning](./docs/container-image-reports.md) |
+| Container-image report import | `skylos ingest trivy --input trivy.json --sarif image.sarif` | Converts an existing Trivy image vulnerability report to Skylos JSON/SARIF; optional digest-bound severity check | [Container-image scanning](./docs/container-image-reports.md#import-an-existing-trivy-report) |
+| Kubernetes exposure proof | `skylos . --select SKY-DEP001,SKY-DEP002,SKY-DEP003 --format concise` | Checks an explicitly external, explicitly plain-HTTP Ingress chain inside one rendered multi-document bundle; route checks compare exact framework wiring with the workload's declared source file and required guards | [Deployment exposure rules](./dictionary.md#kubernetes-deployment-exposure-sky-dep) |
+| GPU source/build intent gate | `skylos . --select SKY-GPU000,SKY-GPU001,SKY-GPU002,SKY-GPU003 --gate --format concise` | Checks declared CUDA image, architecture, driver, and TensorRT packaging intent before the artifact is built | [GPU target contract](./dictionary.md#gpu-release-compatibility-sky-gpu) |
+| Built GPU artifact preflight | `skylos preflight build/app` | Verifies the exact local artifact identity, selected CUDA architectures, packaged runtime route, and declared fleet compatibility; returns `PASS`, `FAIL`, or `UNKNOWN` | [Release reliability](https://docs.skylos.dev/release-reliability) |
+
+### Check an Exact GPU Release Artifact
+
+`skylos preflight` checks the built artifact itself against the repository's
+declared GPU fleet. This is separate from the `SKY-GPU*` source scan, which
+checks Dockerfiles, CUDA build settings, and TensorRT packaging intent before
+the artifact exists.
+
+Declare every machine that receives the same release:
+
+```yaml
+# .skylos/gpu-targets.yml
+version: 1
+targets:
+  - name: inference-t4
+    vendor: nvidia
+    driver: "535.104.05"
+    compute_capability: "7.5"
+    platform: "linux/amd64"
+```
+
+The canonical filename is `.skylos/gpu-targets.yml`; the same schema is also
+accepted as `.skylos/gpu-targets.yaml`.
+
+Then inspect a local build. Skylos uses a trusted system `cuobjdump`, takes a
+private snapshot, and never loads or executes the artifact:
+
+```bash
+skylos preflight build/app
+```
+
+To make the command argument-free in CI, bind it to a project-relative
+artifact with a strict release receipt:
+
+```json
+{"version": 1, "artifact": "build/app"}
+```
+
+Save that file as `.skylos/release.json`, then run `skylos preflight`.
+For requests that reach report generation, terminal output is concise and
+redirected output is schema-versioned JSON. Argument or adapter errors can be
+plain text and exit `2`.
+
+| Status | Exit | Meaning |
+|:---|:---:|:---|
+| `PASS` | `0` | Every declared target is compatible within the stated static evidence scope, and the exact artifact identity is verified |
+| `FAIL` | `1` | Artifact evidence proves at least one declared target incompatible |
+| `UNKNOWN` | `2` | Required evidence is missing, ambiguous, unsupported, or incomplete; it never silently becomes a pass |
+
+`cuobjdump` can report several code-object groups, identified by the producer
+label in its selected executable fatbin. Skylos requires a compatible route
+for every reported group. A PTX-only route stays `UNKNOWN` because static
+inspection cannot prove that the deployment driver will JIT it successfully.
+The overall result is `FAIL` if any target or required check fails; otherwise
+it is `UNKNOWN` if any result is unknown, and `PASS` only when all results pass.
+
+Version 1 proves the local artifact identity, Linux ELF platform, selected
+executable-fatbin architecture routes, a static packaged `$ORIGIN` CUDA
+runtime route, and documented CUDA driver-family compatibility. It does not
+prove runtime execution, workload correctness, memory demand, performance,
+nonselected or relocatable fatbins, or per-kernel symbol parity. Windows PE
+runtime import proof is not implemented. Digest-pinned OCI references are
+accepted as identities but are never pulled or started, so the CLI always
+reports `UNKNOWN` for them; trusted callers can supply digest-bound inspection
+facts through `skylos.preflight.run_preflight(...)`.
+
+## Benchmark Snapshot
+
+Skylos has checked-in regression suites for dead code, security, quality,
+agent review and AI-code defects. They are regression gates, not independent
+benchmarks: we wrote the cases, so we don't quote their scores as accuracy.
+Case counts change as the suites grow; the manifests are the current source.
+
+| Suite | Cases | How to run |
+|:---|:---|:---|
+| Dead code | `benchmarks/dead_code/manifest.json` | `python scripts/dead_code_benchmark.py` |
+| Security | `benchmarks/security/manifest.json` | `python scripts/security_benchmark.py` |
+| Quality | `benchmarks/quality/manifest.json` | `python scripts/quality_benchmark.py`; also runs in CI on every pull request |
+| Agent review | `benchmarks/agent_review/manifest.json` | `python scripts/agent_review_benchmark.py` (needs an LLM API key) |
+| AI-code defects | `benchmarks/ai_code_defects/manifest.json` | `python scripts/ai_code_defect_benchmark.py` |
+
+For methodology, dated results, competitor baselines and caveats, including
+the frozen `golden-v0.2` suites, see [BENCHMARK.md](./BENCHMARK.md). The
+[done-gate benchmark](./docs/done-gate-benchmark.md) replays published
+agent runs and reports what the gate missed.
+
+An experimental Jev runner can blindly score the pinned `jev-1.13.0` typed
+decision model against the checked-in dead-code labels or the frozen
+`skylos-benchmarks` corpus. It withholds labels and review reasons from the
+request, retains golden label IDs locally for exact classifier comparison, and
+repeats the test with answer-signaling identifiers neutralized when that can be
+done without changing fixture semantics. An offline comparator now reports
+label-by-label corrections, regressions, abstentions, and unsafe removals
+against a frozen Skylos result. Live mode sends
+fixture source to TypeSafe, requires an explicit flag and a separate
+`TYPESAFE_API_KEY`; it supports bounded, resumable runs and records request
+versus local contract-validation latency. Normal Skylos scans need no Jev key.
+The paid Jev runs so far are small development runs on synthetic suites, not
+an independent holdout, and on some suites Jev did not improve
+classification. The
+[dead-code benchmark guide](./benchmarks/dead_code/README.md#jev-semantic-research-benchmark)
+and the [same-run comparison](./benchmark_jev.md) report those results with
+their caveats.
+
+Dead-code review is opt-in. A normal `skylos .` scan stays local and uses no
+model. `skylos agent verify .` uses the LLM verifier by default; choose Jev
+explicitly when you want it:
+
+```bash
+skylos agent verify . --format json                         # LLM only
+skylos agent verify . --dead-code-review jev --format json  # Jev only
+skylos agent verify . --dead-code-review jev-llm --format json  # Jev, then LLM if uncertain
+```
+
+Jev-only needs `TYPESAFE_API_KEY`, not an LLM key. Confident Jev "unused"
+decisions retain a static finding and confident "used" decisions suppress it;
+uncertain or unavailable decisions leave the finding visible as unverified.
+Jev-plus-LLM also needs a configured LLM provider and sends uncertain
+decisions to the LLM. Jev alone never authorizes `--fix`. If you select either
+Jev mode without `TYPESAFE_API_KEY`, Skylos stops with setup instructions
+instead of silently switching review modes. Get a key by signing in at the official
+[TypeSafe console](https://console.typesafe.ai/) (access may require an
+invitation), then set `TYPESAFE_API_KEY` in your environment; do not put it in
+source control or a command-line argument.
+
+Jev sends a bounded project source snapshot to TypeSafe (currently at most
+64 KB). Check it for embedded secrets and confirm sharing is authorized; the
+local file guard is not a secret scanner. Oversized or unsafe snapshots cannot
+be judged by Jev. The older `--jev-judge` and `--jev-precheck` flags remain
+available for compatibility; use `--dead-code-review` for new workflows.
+See the [dead-code review guide](./docs/dead-code-review.md) for key setup,
+fallback behavior, and limitations.
+
+### Real-project regression testing
+
+[liveness_primer](https://github.com/mcdigman/liveness_primer), created and
+maintained by [Matthew Digman](https://github.com/mcdigman), is Skylos's official
+real-project regression testing tool. On every PR, it compares the base and
+proposed merge result against the same pinned Python projects and reports
+which findings were added, removed, or changed.
+
+Read the **Analyzer Blast Radius** check for the comparison and downloadable
+reports. These results complement the labeled benchmarks above; a change in
+finding counts alone does not establish accuracy. See the
+[liveness_primer guide](./docs/liveness-primer.md) for scope, review steps, and
+reproduction commands.
+
+## Project Evidence
+
+10 Skylos-assisted dead-code cleanup PRs have been merged into the default
+branch in 9 open-source projects, including
+[Black](https://github.com/psf/black/pull/5041),
+[NetworkX](https://github.com/networkx/networkx/pull/8572),
+[Optuna](https://github.com/optuna/optuna/pull/6547),
+[mitmproxy](https://github.com/mitmproxy/mitmproxy/pull/8136),
+[pypdf](https://github.com/py-pdf/pypdf/pull/3685) and
+[pdm](https://github.com/pdm-project/pdm/pull/3774). Of the other 16 PRs we
+recorded, one was merged into a maintainer's staging branch but did not reach
+`main` (Flagsmith), one was a merged quality fix rather than dead code, one was
+merged and then reverted, four were closed by maintainers, seven were closed by
+us and two are still open. These are accepted cleanup PRs, not endorsements or adoption.
+
+Candidates came from Skylos static analysis, were often triaged with the
+LLM-based `skylos agent verify`, and were checked by hand before each PR.
+[Real-World Results](./REAL_WORLD_RESULTS.md) lists the 26 recorded cleanup and quality-fix PRs with their
+outcomes and the maintainers' reasons.
+
+## Integrations
+
+| Integration | Link | Purpose |
+|:---|:---|:---|
+| GitHub Action | [GitHub Action](./action.yml) | Repository PR gates or optional digest-pinned container-image gates |
+| GitLab Code Quality | [GitLab setup](./docs/gitlab-code-quality.md) | merge request report artifacts; no comment-posting bot or API token |
+| Bitbucket Pipelines / Azure Pipelines | [Pipeline setup](./docs/bitbucket-azure-pipelines.md) | detects pull request context for Skylos Cloud checks; `--diff` uses the PR target branch |
+| Jenkins, CircleCI and any other CI | [Skylos on any CI](./docs/ci-platforms.md) | `skylos cicd init` writes or prints the pull request gate for your CI; `--diff` uses the PR target branch |
+| VS Code extension | [VS Code extension](./editors/vscode/README.md) | in-editor findings and AI-assisted fixes |
+| Claude Code / Codex / Cursor hooks | [Agent-loop hooks](./docs/agent-hooks.md) | check each agent edit, file read, and package install locally |
+| MCP server | [MCP setup](https://docs.skylos.dev/mcp-server) | expose Skylos scans to AI agents and coding assistants; `analyze` works without a token (five calls per rolling 24 hours), other tools need a free Skylos project token; authenticated scans can use credits |
+| Ruff | [Python linting](./docs/python-linting.md) | optional Python linting through `skylos lint` |
+| Docker image | [Installation](https://docs.skylos.dev/installation) | run Skylos without a local Python install |
+| Skylos Cloud | [Skylos Cloud](./docs/skylos-cloud.md) | `skylos cloud`: upload findings, see each branch's quality gate and how it changed |
+
+Set up a pull request gate from the CLI. `skylos cicd init` finds your CI
+(GitHub Actions, GitLab CI, Jenkins, Bitbucket Pipelines, Azure Pipelines,
+CircleCI) and writes its file, or prints the block to add when the file
+already exists. Other CIs get the commands to add; see
+[Skylos on any CI](./docs/ci-platforms.md).
+
+```bash
+skylos cicd init --no-upload                       # without Skylos Cloud
+skylos cicd init --no-upload --scan-path apps/api  # a monorepo subproject
+skylos cicd init                                   # with Skylos Cloud uploads
+skylos cicd init --no-upload --risk-review         # plus the "Skylos risk review" check
+skylos cicd init --ci jenkins                      # a Jenkinsfile pull request stage
+```
+
+On GitHub Actions, the generated workflow reviews changed lines on pull requests and adds a
+`skylos done` job when it finds your tests. Without `--no-upload` it also
+uploads full scans from default-branch pushes using GitHub OIDC; that upload
+job fails until the Skylos GitHub App is installed on the repository. It
+supports monorepo subprojects through `--scan-path`. See
+[Your first Skylos-gated pull request](./docs/first-gated-pr.md).
+
+To scan a built image with the composite Action, install a pinned Trivy version
+in the caller's job and set `image` to a trusted `repository@sha256:<digest>`
+build output plus `image-platform`. This runs an image-only scan; `mode: gate`
+uses `image-fail-on` (default `high`), while `mode: scan` only reports findings.
+See [container-image scanning](./docs/container-image-reports.md#scan-an-image-with-the-github-action).
+
+## Documentation Map
+
+| Need | Read This |
+|:---|:---|
+| Install options, source install, and Docker | [Installation](https://docs.skylos.dev/installation) |
+| First scan and core workflows | [Quick Start](https://docs.skylos.dev/quick-start) |
+| CLI commands, flags, and examples | [CLI Reference](https://docs.skylos.dev/cli-reference) |
+| CLI output modes, pretty reports, and TUI controls | [CLI Output Modes](./docs/cli-output.md) |
+| Optional Ruff linting through the Skylos CLI | [Python Linting](./docs/python-linting.md) |
+| CI setup, PR gates, annotations, and branch protection | [CI/CD](https://docs.skylos.dev/ci-cd) |
+| GitLab merge request reports and CI example | [GitLab Code Quality](./docs/gitlab-code-quality.md) |
+| Bitbucket Pipelines and Azure Pipelines pull request checks | [Bitbucket and Azure Pipelines](./docs/bitbucket-azure-pipelines.md) |
+| Jenkins, CircleCI, Buildkite, Travis CI and other CIs | [Skylos on any CI](./docs/ci-platforms.md) |
+| Dead-code behavior and framework awareness | [Dead Code Detection](https://docs.skylos.dev/dead-code-detection) |
+| Security scanning and taint analysis | [Security Analysis](https://docs.skylos.dev/security-analysis) |
+| Dependency CVEs, uv/npm/pnpm/Poetry/Yarn lockfiles, offline SBOM, and SCA in CI | [Dependency Scanning](./docs/dependency-scanning.md) |
+| Dependency licenses, SPDX 2.3 SBOM, and license deny/allow policy | [License Compliance](./docs/license-compliance.md) |
+| Digest-pinned container-image scanning and GitHub Action setup | [Container-image scanning](./docs/container-image-reports.md) |
+| Source GPU contracts and built-artifact preflight | [Release Reliability](https://docs.skylos.dev/release-reliability) |
+| Rule ID prefixes and product terminology | [Rule Dictionary](./dictionary.md) |
+| Agent scan, verification, remediation, and model setup | [AI Features](https://docs.skylos.dev/ai-features) |
+| AI defense checks and LLM guardrails | [AI Defense](https://docs.skylos.dev/ai-defense) |
+| Claude Code, Codex, and Cursor hooks | [Agent-loop hooks](./docs/agent-hooks.md) |
+| Done gate for agent changes (`skylos done`) | [Done gate](./docs/done-gate.md) |
+| What a change touches and what to read first (`skylos done map`) | [Change map](./docs/change-map.md) |
+| Risks a pull request should not merge on a bot's approval (`skylos cicd risk-review`) | [Risk review](./docs/risk-review.md) |
+| First gated pull request with GitHub Actions | [Your first gated PR](./docs/first-gated-pr.md) |
+| MCP server setup | [MCP Server](https://docs.skylos.dev/mcp-server) |
+| Every Skylos-assisted cleanup PR and its outcome | [Real-World Results](./REAL_WORLD_RESULTS.md) |
+| Baselines, filtering, suppressions, and whitelists | [Configuration](https://docs.skylos.dev/configuration) |
+| Smart tracing | [Smart Tracing](https://docs.skylos.dev/smart-tracing) |
+| Rule families and language support | [Rules Reference](https://docs.skylos.dev/rules-reference) |
+| `skylos cloud`, what it sends, and the other Cloud commands | [Skylos Cloud](./docs/skylos-cloud.md) |
+| Cloud uploads and dashboard flow | [CLI to Dashboard](https://docs.skylos.dev/cloud-workflow) |
+| Every network request the CLI can make, and how to turn each off | [What leaves your machine](./docs/privacy-and-network.md) |
+| VS Code extension | [VS Code Extension](https://docs.skylos.dev/vscode) |
+| Benchmarks and methodology | [BENCHMARK.md](./BENCHMARK.md) |
+| Security policy | [SECURITY.md](./SECURITY.md) |
+| Release process | [RELEASE_WORKFLOW.md](./RELEASE_WORKFLOW.md) |
+| Contribution priorities | [ROADMAP.md](./ROADMAP.md) |
+| Contributing | [CONTRIBUTING.md](./CONTRIBUTING.md) |
+
+## Common Questions
+
+**Does Skylos replace Bandit, Semgrep, CodeQL, or Vulture?**
+
+No. Skylos can run alongside them. It focuses on framework-aware dead-code
+signal, PR gating, AI-era regression checks, and a combined workflow across
+dead code, security, secrets, quality, and AI-defect checks.
+
+**Does Skylos require an LLM?**
+
+No. Core static analysis runs locally without API keys. LLM features are
+optional through `skylos[llm]` and agent commands.
+
+**Is Skylos free?**
+
+The Skylos CLI is free and open source (Apache-2.0). Skylos Cloud has a Free
+plan for one project and a Workspace plan; buying any one-time credit pack
+turns Workspace on for good, with no seats or subscriptions.
+
+**Does the MCP server need an account?**
+
+Without `SKYLOS_API_KEY` the MCP server only exposes `analyze` (dead code,
+five calls per rolling 24 hours). Every other MCP tool (`verify_change`, `verify_agent`,
+`security_scan`, `secrets_scan`, and so on) returns an authentication error
+until the server is started with `SKYLOS_API_KEY` set; create a free key in
+the Skylos Cloud dashboard settings. Unauthenticated `analyze` calls are free.
+Authenticated `analyze`, security, quality, secrets and provenance scans can
+use credits; Skylos Cloud sets the current cost. `remediate` currently costs
+10 credits per call. The CLI equivalents (`skylos verify`,
+`skylos defend`, `skylos . -a`) and `skylos agent install-hooks` run on
+your machine with no account or key; their dependency and package checks
+still query public registries (see
+[What Leaves Your Machine](#what-leaves-your-machine)).
+
+**Does Skylos replace Ruff?**
+
+No. `skylos lint` is an optional convenience entry point that delegates to
+Ruff. Install it with `pip install "skylos[lint]"`; normal Skylos scans do not
+run Ruff or merge Ruff violations into `SKY-*` findings.
+
+**Can I use it only on changed code?**
+
+Yes. Use `skylos . -a --diff origin/main` locally or configure CI gates to focus
+on new findings. A removed security control, such as a deleted auth
+decorator (SKY-L021), is still reported with `--diff`, including when the
+change only deletes the decorator line.
+
+**Does `skylos done` catch every way to fake a finished change?**
+
+No. It compares test functions (pytest, unittest, JavaScript/TypeScript), so
+rewriting a custom test-runner script or deleting cases from a test data file
+is not caught, and a test can still be weakened in ways its static assertion
+count cannot see. See the done gate's [limits](./docs/done-gate.md#not-yet)
+and its [benchmark](./docs/done-gate-benchmark.md).
+
+**How should I handle intentional dynamic code?**
+
+Use baselines, whitelists, inline suppressions, or runtime tracing. See the
+[configuration docs](https://docs.skylos.dev/configuration) and
+[smart tracing docs](https://docs.skylos.dev/smart-tracing).
+
+## Contributing And Support
+
+- Report security issues through [SECURITY.md](./SECURITY.md).
+- Report a problem privately with `skylos feedback`, which opens a prefilled
+  form at [skylos.dev/feedback](https://skylos.dev/feedback). The page address
+  carries the Skylos version, OS, Python version and the last failed command
+  (paths and secrets masked); your message is sent only when you press Send.
+  No account needed.
+- Open public bugs and false-positive reports with minimal repros
+  (`skylos feedback --github` prefills the issue form).
+- Check [ROADMAP.md](./ROADMAP.md) for useful contribution areas.
+- Read [CONTRIBUTING.md](./CONTRIBUTING.md) before sending a pull request.
+- See [QUALITY.md](./QUALITY.md) for project quality and gate expectations.
+- Join the [Discord](https://discord.gg/Ftn9t9tErf) for community support.
+
+## License
+
+Skylos is licensed under the [Apache License 2.0](./LICENSE).
+
+<!-- mcp-name: io.github.duriantaco/skylos -->
 
 ## Privacy
 

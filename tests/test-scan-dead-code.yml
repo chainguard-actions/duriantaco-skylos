@@ -1,0 +1,31 @@
+name: Test scan mode detects dead code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/dead-code
+          mode: scan
+          analysis: dead-code
+          confidence: "10"
+      - name: Assert findings reported
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "findings-count: $COUNT"
+          cat "$GITHUB_WORKSPACE/skylos-report.json" | head -c 4000
+          echo
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected at least one finding"
+            exit 1
+          fi
+          if ! grep -qE 'totally_unused_function_xyz|"os"|json' "$GITHUB_WORKSPACE/skylos-report.json"; then
+            echo "FAIL: expected unused symbol in report"
+            exit 1
+          fi
+          echo "PASS"
