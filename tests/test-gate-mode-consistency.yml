@@ -1,0 +1,59 @@
+name: Test gate mode sets gate-passed consistent with outcome
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create vulnerable scan target
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/scan-target"
+          cat > "$GITHUB_WORKSPACE/scan-target/app.py" <<'EOF'
+          import subprocess
+
+
+          def run(cmd):
+              subprocess.call(cmd, shell=True)
+              return eval(cmd)
+
+
+          if __name__ == "__main__":
+              run(input())
+          EOF
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          path: scan-target
+          mode: gate
+          analysis: "security"
+          confidence: "0"
+      - name: Assert gate result matches outcome
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          PASSED: ${{ steps.action.outputs.gate-passed }}
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gate-passed: $PASSED"
+          echo "findings-count: $COUNT"
+          if [ ! -f "$GITHUB_WORKSPACE/skylos-report.json" ]; then
+            echo "FAIL: report file missing"
+            exit 1
+          fi
+          if [ "$OUTCOME" = "success" ]; then
+            if [ "$PASSED" != "true" ]; then
+              echo "FAIL: action succeeded but gate-passed is not 'true'"
+              exit 1
+            fi
+          elif [ "$OUTCOME" = "failure" ]; then
+            if [ "$PASSED" = "true" ]; then
+              echo "FAIL: action failed but gate-passed is 'true'"
+              exit 1
+            fi
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+          echo "PASS"

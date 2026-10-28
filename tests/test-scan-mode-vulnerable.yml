@@ -1,0 +1,67 @@
+name: Test scan mode reports findings for vulnerable code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create vulnerable scan target
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/scan-target"
+          cat > "$GITHUB_WORKSPACE/scan-target/app.py" <<'EOF'
+          import os
+          import subprocess
+          import pickle
+
+
+          def unused_helper_one():
+              return 42
+
+
+          def unused_helper_two(x):
+              return x * 2
+
+
+          def run(cmd):
+              subprocess.call(cmd, shell=True)
+              os.system(cmd)
+              return eval(cmd)
+
+
+          def load(data):
+              return pickle.loads(data)
+
+
+          if __name__ == "__main__":
+              run(input())
+              load(b"")
+          EOF
+      - id: action
+        uses: .
+        with:
+          path: scan-target
+          mode: scan
+          analysis: "dead-code security"
+          confidence: "0"
+      - name: Assert findings were reported
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $COUNT"
+          echo "report-path: $REPORT"
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not an integer"
+            exit 1
+          fi
+          if [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected at least one finding"
+            cat skylos-report.json || true
+            exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/$REPORT" ]; then
+            echo "FAIL: report file missing"
+            exit 1
+          fi
+          echo "PASS"

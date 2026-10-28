@@ -1,0 +1,51 @@
+name: Test token input with non-fatal dashboard upload
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create scan target
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/scan-target"
+          cat > "$GITHUB_WORKSPACE/scan-target/app.py" <<'EOF'
+          def greet(name):
+              return "Hello, " + name
+
+
+          if __name__ == "__main__":
+              print(greet("world"))
+          EOF
+      - id: action
+        uses: .
+        with:
+          path: scan-target
+          mode: scan
+          token: invalid-skylos-test-token
+      - name: Assert outputs (upload failure must not break the scan)
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $COUNT"
+          echo "report-path: $REPORT"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected action success"
+            exit 1
+          fi
+          if [ "$REPORT" != "skylos-report.json" ]; then
+            echo "FAIL: expected report-path 'skylos-report.json'"
+            exit 1
+          fi
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not a non-negative integer"
+            exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/skylos-report.json" ]; then
+            echo "FAIL: report file not found"
+            exit 1
+          fi
+          echo "PASS"
