@@ -1,0 +1,35 @@
+name: Test scan mode reports findings
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/vulnerable
+          mode: scan
+          analysis: dead-code security
+      - name: Assert outputs
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "count: $COUNT report: $REPORT passed: '$PASSED'"
+          if [ "$REPORT" != "skylos-report.json" ]; then
+            echo "FAIL: unexpected report path"; exit 1
+          fi
+          if [ ! -f "$REPORT" ]; then
+            echo "FAIL: report file missing"; exit 1
+          fi
+          python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$REPORT" || { echo "FAIL: invalid JSON"; exit 1; }
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected at least one finding"; exit 1
+          fi
+          if [ -n "$PASSED" ]; then
+            echo "FAIL: gate should not run in scan mode"; exit 1
+          fi
+          echo "PASS"

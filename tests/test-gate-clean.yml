@@ -1,0 +1,31 @@
+name: Test gate mode passes on clean code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean
+          mode: gate
+          analysis: dead-code
+      - name: Assert gate passed
+        env:
+          PASSED: ${{ steps.action.outputs.gate-passed }}
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "passed: $PASSED count: $COUNT report: $REPORT"
+          if [ "$PASSED" != "true" ]; then
+            echo "FAIL: expected gate-passed=true"; exit 1
+          fi
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count not numeric"; exit 1
+          fi
+          if [ "$REPORT" != "skylos-report.json" ] || [ ! -f "$REPORT" ]; then
+            echo "FAIL: report missing"; exit 1
+          fi
+          echo "PASS"
