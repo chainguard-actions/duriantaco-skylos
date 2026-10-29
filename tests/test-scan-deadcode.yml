@@ -1,0 +1,36 @@
+name: Test scan mode detects dead code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/deadcode
+          mode: scan
+          analysis: dead-code
+          confidence: "20"
+      - name: Assert findings detected
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "report: $REPORT"
+          echo "count: $COUNT"
+          cat "$REPORT" || true
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not numeric"
+            exit 1
+          fi
+          if [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected at least one dead-code finding"
+            exit 1
+          fi
+          if ! grep -q "totally_unused_helper_function\|another_unused_function" "$REPORT"; then
+            echo "FAIL: expected unused function in report"
+            exit 1
+          fi
+          echo "PASS"
