@@ -1,0 +1,25 @@
+name: Test security analysis
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/security-project
+          mode: scan
+          analysis: security
+      - name: Assert security findings detected
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "count: $COUNT"
+          cat skylos-report.json || true
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected at least one security finding"
+            exit 1
+          fi
+          echo "PASS"

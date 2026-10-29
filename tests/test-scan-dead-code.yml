@@ -1,0 +1,31 @@
+name: Test dead code detection
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/dead-code-project
+          mode: scan
+          analysis: dead-code
+      - name: Assert findings detected
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          GATE: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "count: $COUNT"
+          echo "gate: $GATE"
+          cat skylos-report.json || true
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected at least one dead-code finding"
+            exit 1
+          fi
+          if [ -n "$GATE" ]; then
+            echo "FAIL: gate should not run in scan mode"
+            exit 1
+          fi
+          echo "PASS"
