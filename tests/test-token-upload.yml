@@ -1,0 +1,43 @@
+name: Test with legacy Skylos API token (upload non-fatal)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/deadcode
+          mode: scan
+          analysis: dead-code
+          token: skylos-test-invalid-token
+      - name: Assert report-path output
+        env:
+          ACTUAL: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "skylos-report.json" ]; then
+            echo "FAIL: expected 'skylos-report.json'"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert report file is valid JSON
+        run: |
+          if [ ! -f skylos-report.json ]; then
+            echo "FAIL: skylos-report.json not found"
+            exit 1
+          fi
+          python3 -c "import json; d=json.load(open('skylos-report.json')); assert isinstance(d, dict)" || { echo "FAIL: invalid JSON report"; exit 1; }
+          echo "PASS"
+      - name: Assert findings-count is an integer
+        env:
+          ACTUAL: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "actual: $ACTUAL"
+          if ! [[ "$ACTUAL" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not a non-negative integer"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,49 @@
+name: Test gate mode on clean code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # Only dead-code analysis: security analysis (--danger) also audits the
+      # repository's .github/workflows files, which are outside our control
+      # and produce findings that would fail the gate.
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean
+          mode: gate
+          analysis: dead-code
+      - name: Assert gate passed
+        env:
+          ACTUAL: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "true" ]; then
+            echo "FAIL: expected gate-passed 'true'"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert findings-count is an integer
+        env:
+          ACTUAL: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "actual: $ACTUAL"
+          if ! [[ "$ACTUAL" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not a non-negative integer"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert report exists and is valid JSON
+        env:
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "report: $REPORT"
+          if [ "$REPORT" != "skylos-report.json" ]; then
+            echo "FAIL: expected report-path 'skylos-report.json'"
+            exit 1
+          fi
+          test -f skylos-report.json || { echo "FAIL: report missing"; exit 1; }
+          python3 -c 'import json; json.load(open("skylos-report.json"))' || { echo "FAIL: invalid JSON"; exit 1; }
+          echo "PASS"
