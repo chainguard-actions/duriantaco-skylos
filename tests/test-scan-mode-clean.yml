@@ -1,0 +1,40 @@
+name: Test scan mode on clean code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean
+          mode: scan
+      - name: Assert outputs
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "count: $COUNT"
+          echo "report: $REPORT"
+          echo "gate-passed: '$PASSED'"
+          if [ "$REPORT" != "skylos-report.json" ]; then
+            echo "FAIL: expected report-path skylos-report.json"
+            exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/$REPORT" ]; then
+            echo "FAIL: report file missing"
+            exit 1
+          fi
+          python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$GITHUB_WORKSPACE/$REPORT" || { echo "FAIL: report not valid JSON"; exit 1; }
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count not numeric"
+            exit 1
+          fi
+          if [ -n "$PASSED" ]; then
+            echo "FAIL: gate-passed should be empty in scan mode"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,250 @@
+import json
+from pathlib import Path
+
+import skylos.benchmarks.quality as benchmark
+from skylos.benchmarks.quality import (
+    QUALITY_TAXONOMY,
+    format_summary,
+    load_manifest,
+    run_manifest,
+    validate_manifest,
+)
+
+MANIFEST_PATH = (
+    Path(__file__).resolve().parent.parent / "benchmarks/quality" / "manifest.json"
+)
+
+
+def test_checked_in_quality_manifest_validates():
+    manifest = load_manifest(MANIFEST_PATH)
+    cases = validate_manifest(manifest, MANIFEST_PATH)
+
+    assert len(cases) >= 6
+    assert {case["id"] for case in cases} >= {
+        "complexity-hotspot",
+        "long-function",
+        "argument-overload",
+        "inconsistent-return",
+        "empty-error-handler",
+        "type-annotation-gaps",
+        "framework-route-policy",
+        "opaque-identifier",
+        "repo-policy-missing-typechecker",
+        "clean-module",
+    }
+
+    labels = {label for case in cases for label in case["taxonomy"]}
+    assert labels <= set(QUALITY_TAXONOMY)
+
+
+def test_checked_in_quality_benchmark_passes():
+    summary = run_manifest(MANIFEST_PATH)
+
+    assert summary["case_count"] >= 6
+    assert summary["failure_count"] == 0, format_summary(summary)
+    assert summary["scores"]["overall_score"] >= 95.0, format_summary(summary)
+
+
+def test_quality_benchmark_scans_isolated_copy_and_cleans_it_up(tmp_path, monkeypatch):
+    case_dir = tmp_path / "case"
+    case_dir.mkdir()
+    app = case_dir / "app.py"
+    app.write_text("def demo():\n    return 1\n", encoding="utf-8")
+
+    captured = {}
+
+    def fake_analyze(path, **kwargs):
+        isolated_path = Path(path)
+        captured["path"] = isolated_path
+        captured["source"] = (  # skylos: ignore[SKY-D215,SKY-D325] isolated temp
+            isolated_path / "app.py"
+        ).read_text(encoding="utf-8")
+        return json.dumps({"quality": []})
+
+    monkeypatch.setattr(benchmark, "analyze", fake_analyze)
+    case = {
+        "id": "isolated-quality-case",
+        "path": case_dir.name,
+        "taxonomy": ["precision_guard"],
+        "expect": {"present": {}, "absent": {"quality": ["SKY-L006"]}},
+    }
+
+    result = benchmark.run_case(case, tmp_path / "manifest.json")
+
+    isolated_path = captured["path"]
+    assert isolated_path.name == case_dir.name
+    assert isolated_path != case_dir.resolve()
+    assert case_dir.parent not in isolated_path.parents
+    assert captured["source"] == app.read_text(encoding="utf-8")
+    assert not isolated_path.exists()
+    assert result["path"] == str(case_dir.resolve())
+
+
+def test_quality_benchmark_preserves_symlinks_in_isolated_copy(tmp_path, monkeypatch):
+    case_dir = tmp_path / "case"
+    case_dir.mkdir()
+    (case_dir / "app.py").write_text("value = 1\n", encoding="utf-8")
+    linked_file = case_dir / "linked.py"
+    try:
+        linked_file.symlink_to("app.py")
+    except (OSError, NotImplementedError):
+        return
+
+    captured = {}
+
+    def fake_analyze(path, **kwargs):
+        isolated_link = Path(path) / linked_file.name
+        captured["path"] = Path(path)
+        captured["is_symlink"] = isolated_link.is_symlink()
+        captured["target"] = isolated_link.readlink()
+        return json.dumps({})
+
+    monkeypatch.setattr(benchmark, "analyze", fake_analyze)
+
+    benchmark._scan_case(case_dir)
+
+    assert captured["is_symlink"] is True
+    assert captured["target"] == Path("app.py")
+    assert not captured["path"].exists()
+
+
+def test_runner_reports_present_and_budget_failures(tmp_path, monkeypatch):
+    case_dir = tmp_path / "inconsistent_case"
+    case_dir.mkdir()
+    (case_dir / "demo.py").write_text(
+        "def demo(flag):\n    return flag\n", encoding="utf-8"
+    )
+
+    manifest = {
+        "version": 1,
+        "cases": [
+            {
+                "id": "bad-quality-case",
+                "path": "inconsistent_case",
+                "description": "Synthetic benchmark failure case.",
+                "taxonomy": ["control_flow"],
+                "importance": "critical",
+                "source": {
+                    "repo": "https://github.com/example/project",
+                    "license": "MIT",
+                    "notes": "Test-only fixture.",
+                },
+                "budget": {"max_seconds": 0.5},
+                "expect": {
+                    "present": {"quality": ["SKY-L006"]},
+                    "absent": {},
+                },
+            }
+        ],
+    }
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    monkeypatch.setattr(
+        benchmark,
+        "_scan_case",
+        lambda case_path, scan=None: {
+            "quality": [],
+            "unused_functions": [],
+            "unused_imports": [],
+        },
+    )
+
+    ticks = iter([0.0, 1.0])
+    monkeypatch.setattr(benchmark.time, "perf_counter", lambda: next(ticks))
+
+    summary = run_manifest(manifest_path)
+
+    assert summary["failure_count"] == 2
+    failures = summary["cases"][0]["failures"]
+    assert {failure["failure_type"] for failure in failures} == {
+        "expectation",
+        "budget",
+    }
+    assert summary["scores"]["overall_score"] < 50.0
+
+
+def test_runner_treats_small_budget_overrun_as_latency_penalty(tmp_path, monkeypatch):
+    case_dir = tmp_path / "slightly_slow_case"
+    case_dir.mkdir()
+    (case_dir / "demo.py").write_text(
+        "def demo(flag):\n    return flag\n", encoding="utf-8"
+    )
+
+    manifest = {
+        "version": 1,
+        "cases": [
+            {
+                "id": "slightly-slow-quality-case",
+                "path": "slightly_slow_case",
+                "description": "Synthetic benchmark timing grace case.",
+                "taxonomy": ["control_flow"],
+                "importance": "critical",
+                "source": {
+                    "repo": "https://github.com/example/project",
+                    "license": "MIT",
+                    "notes": "Test-only fixture.",
+                },
+                "budget": {"max_seconds": 0.5},
+                "expect": {
+                    "present": {"quality": ["SKY-L006"]},
+                    "absent": {},
+                },
+            }
+        ],
+    }
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    monkeypatch.setattr(
+        benchmark,
+        "_scan_case",
+        lambda case_path, scan=None: {
+            "quality": [{"rule_id": "SKY-L006"}],
+        },
+    )
+
+    ticks = iter([0.0, 0.54])
+    monkeypatch.setattr(benchmark.time, "perf_counter", lambda: next(ticks))
+
+    summary = run_manifest(manifest_path)
+
+    assert summary["failure_count"] == 0
+    assert summary["scores"]["latency_score"] < 1.0
+
+
+def test_format_summary_includes_taxonomy_and_metrics():
+    summary = {
+        "case_count": 1,
+        "failure_count": 0,
+        "total_elapsed_seconds": 0.25,
+        "scores": {
+            "overall_score": 100.0,
+            "presence_recall": 1.0,
+            "absence_guard": 1.0,
+            "latency_score": 1.0,
+        },
+        "taxonomy": {
+            "complexity": {
+                "description": QUALITY_TAXONOMY["complexity"],
+                "case_count": 1,
+                "weighted_score": 100.0,
+                "failure_count": 0,
+            }
+        },
+        "cases": [
+            {
+                "id": "complexity-hotspot",
+                "importance": "critical",
+                "elapsed_seconds": 0.25,
+                "scores": {"overall_score": 100.0},
+                "failures": [],
+            }
+        ],
+    }
+
+    rendered = format_summary(summary)
+
+    assert "Quality benchmark score: 100.0/100" in rendered
+    assert "complexity: cases=1 score=100.0 failures=0" in rendered
+    assert "PASS complexity-hotspot [critical]" in rendered
