@@ -1,0 +1,25 @@
+name: Test scan mode detects dead code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/deadcode
+          mode: scan
+          analysis: dead-code
+      - name: Assert findings reported
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "count: $COUNT"
+          cat "$REPORT" | head -c 3000; echo
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected at least one finding"; exit 1
+          fi
+          echo "PASS"

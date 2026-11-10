@@ -1,0 +1,16 @@
+# Skylos pre-commit configuration
+# Fast staged-only local hook.
+# Checks security, secrets, and quality in staged source/config files.
+# Full repo and diff-aware enforcement runs in CI.
+
+repos:
+  - repo: local
+    hooks:
+      - id: skylos-gate
+        name: Skylos Staged Gate
+        entry: skylos
+        language: system
+        pass_filenames: false
+        require_serial: true
+        args: ["agent", "pre-commit", "."]
+        stages: [pre-commit]
