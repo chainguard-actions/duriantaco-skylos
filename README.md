@@ -61,6 +61,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | v5.3.0 | [`v5.3.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v5.3.0) | [`82d97b9`](https://github.com/duriantaco/skylos/commit/82d97b9f6418f596cece2cc74537064693421138) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v5.3.0/HARDENING.md) |
 | v5.4.0 | [`v5.4.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v5.4.0) | [`32bee30`](https://github.com/duriantaco/skylos/commit/32bee306c4c72a577f7d6a231bbbde7ee5b75017) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v5.4.0/HARDENING.md) |
 | v5.5.0 | [`v5.5.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v5.5.0) | [`e25c22b`](https://github.com/duriantaco/skylos/commit/e25c22b235684dcb3a8ee23ee15d4a21c89fcf97) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v5.5.0/HARDENING.md) |
+| v5.6.0 | [`v5.6.0`](https://github.com/chainguard-actions/duriantaco-skylos/tree/v5.6.0) | [`436a838`](https://github.com/duriantaco/skylos/commit/436a838c4e177cdfec37bfdb080957b8f1d576aa) | [`HARDENING.md`](https://github.com/chainguard-actions/duriantaco-skylos/blob/v5.6.0/HARDENING.md) |
 
 ## Privacy
 
