@@ -1,0 +1,197 @@
+import ast
+from skylos.rules.quality.nesting import NestingRule
+
+
+def check_code(rule, code, filename="test.py"):
+    tree = ast.parse(code)
+    findings = []
+    context = {"filename": filename, "mod": "test_module"}
+
+    for node in ast.walk(tree):
+        res = rule.visit_node(node, context)
+        if res:
+            findings.extend(res)
+    return findings
+
+
+class TestNestingRule:
+    def test_flat_function(self):
+        code = """
+def flat():
+    x = 1
+    y = 2
+    return x + y
+"""
+        rule = NestingRule(threshold=3)
+        findings = check_code(rule, code)
+        assert len(findings) == 0
+
+    def test_shallow_nesting(self):
+        code = """
+def shallow():
+    if True:
+        for x in range(10):
+            if x > 5:
+                print(x)
+"""
+        rule = NestingRule(threshold=3)
+        findings = check_code(rule, code)
+        assert len(findings) == 0
+
+    def test_deep_nesting_trigger(self):
+        code = """
+async def deep():
+    if True: 
+        async for x in items:
+            if x > 5:
+                while True:
+                    break
+"""
+        rule = NestingRule(threshold=3)
+        findings = check_code(rule, code)
+
+        assert len(findings) == 1
+        assert findings[0]["rule_id"] == "SKY-Q302"
+        assert findings[0]["value"] == 4
+        assert findings[0]["severity"] == "MEDIUM"
+        assert "test_module.deep" in findings[0]["name"]
+
+    def test_severity_levels(self):
+        rule = NestingRule(threshold=2)
+
+        code_high = """
+def high_nesting():
+    if a:
+        if b:
+            if c:
+                if d:
+                    if e: 
+                        pass
+"""
+        findings = check_code(rule, code_high)
+        assert len(findings) == 1
+        assert findings[0]["value"] == 5
+        assert findings[0]["severity"] == "HIGH"
+
+    def test_extreme_nesting_is_never_critical(self):
+        lines = ["def deep():"]
+        for i in range(10):
+            lines.append("    " * (i + 1) + f"if x{i}:")
+        lines.append("    " * 11 + "pass")
+        findings = check_code(NestingRule(threshold=2), "\n".join(lines))
+        assert len(findings) == 1
+        assert findings[0]["value"] == 10
+        assert findings[0]["severity"] == "HIGH"
+
+    def test_ignore_inner_function_def(self):
+        code = """
+def outer():
+    if True:
+        def inner():
+            if True:
+                pass
+        x = 1
+"""
+        rule = NestingRule(threshold=1)
+
+        findings = check_code(rule, code)
+        assert len(findings) == 0
+
+    def test_elif_chain_is_not_nested(self):
+        code = """
+def classify(value):
+    if value == "a":
+        return 1
+    elif value == "b":
+        return 2
+    elif value == "c":
+        return 3
+    elif value == "d":
+        return 4
+    return 0
+"""
+        rule = NestingRule(threshold=1)
+        findings = check_code(rule, code)
+        assert findings == []
+
+    def test_try_except_finally(self):
+        code = """
+def complex_try():
+    try:
+        if True:
+            pass
+    except ValueError:
+        for i in x:
+            pass
+    finally:
+        while True:
+            pass
+"""
+        rule = NestingRule(threshold=0)
+        findings = check_code(rule, code)
+
+        assert len(findings) == 1
+        assert findings[0]["value"] == 1
+
+    def test_with_around_top_level_try_keeps_try_exemption(self):
+        code = """
+def drain(a, b, c):
+    with lock:
+        try:
+            if a:
+                for x in b:
+                    if c:
+                        pass
+        except ValueError:
+            pass
+"""
+        # with adds no level and the try is top level: if 1, for 2, if 3.
+        findings = check_code(NestingRule(threshold=2), code)
+        assert len(findings) == 1
+        assert findings[0]["value"] == 3
+
+    def test_try_under_with_inside_branch_still_counts(self):
+        code = """
+def drain(a, b):
+    if a:
+        with lock:
+            try:
+                if b:
+                    pass
+            except ValueError:
+                pass
+"""
+        # if 1; the try is not top level: 2; if 3.
+        findings = check_code(NestingRule(threshold=0), code)
+        assert findings[0]["value"] == 3
+
+    def test_match_case_bodies_are_traversed(self):
+        code = """
+def route(x, a, b, c, d):
+    match x:
+        case 1:
+            if a:
+                for y in b:
+                    if c:
+                        while d:
+                            pass
+        case _:
+            pass
+"""
+        # case 1, if 2, for 3, if 4, while 5.
+        findings = check_code(NestingRule(threshold=3), code)
+        assert len(findings) == 1
+        assert findings[0]["value"] == 5
+
+    def test_match_counts_as_one_level(self):
+        code = """
+def route(xs):
+    for x in xs:
+        match x:
+            case 1:
+                if x:
+                    pass
+"""
+        # for 1, case 2, if 3.
+        findings = check_code(NestingRule(threshold=0), code)
+        assert findings[0]["value"] == 3

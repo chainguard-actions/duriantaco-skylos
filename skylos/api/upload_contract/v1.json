@@ -1,0 +1,213 @@
+{
+  "contract": "skylos-report-upload",
+  "version": 1,
+  "owner": "skylos-cloud (the server is the authority; the CLI vendors an identical copy and CI checks they match)",
+  "finding": {
+    "file_path": {
+      "normalize": [
+        "trim surrounding ASCII whitespace only (space, tab, CR, LF, vertical tab, form feed); no other characters are trimmed",
+        "percent-decode once (leave the value unchanged if it is not valid percent-encoding)",
+        "replace backslashes with forward slashes",
+        "strip a leading file: scheme and its slashes",
+        "strip a leading Windows drive (e.g. C:/)",
+        "strip leading slashes",
+        "strip one CI workspace prefix: home/runner/work/<owner>/<repo>/, __w/<owner>/<repo>/ or github/workspace/",
+        "collapse repeated slashes"
+      ],
+      "invalid_when": [
+        "not a string",
+        "empty after normalization",
+        "any segment is empty, '.' or '..' (after normalization)",
+        "any segment contains a control character U+0000-U+001F or U+007F"
+      ],
+      "max_length": 500,
+      "repository_scope": {
+        "description": "Findings about the whole project rather than a file. Sent with file_path equal to the project root ('.' when the project is the repository root, otherwise the project subpath), line_number 1 and kind 'repo_policy'.",
+        "rule_ids": [
+          "SKY-R101",
+          "SKY-R102",
+          "SKY-R103",
+          "SKY-R104"
+        ],
+        "kind": "repo_policy",
+        "line_number": 1,
+        "stored_path": "."
+      },
+      "on_invalid": "store_without_location",
+      "placeholder_paths": {
+        "values": [
+          "unknown",
+          "<unknown>",
+          "?",
+          "-",
+          "none",
+          "null",
+          "undefined"
+        ],
+        "description": "Case-insensitive. Treated exactly like an invalid path: stored without a location, with a warning."
+      },
+      "max_length_unit": "Unicode code points"
+    },
+    "line_number": {
+      "type": "integer",
+      "min": 0,
+      "on_invalid": "store_as_0",
+      "accept": "a JSON integer, or a string of decimal digits (converted to an integer)"
+    },
+    "rule_id": {
+      "min_length": 1,
+      "max_length": 120,
+      "invalid_when": [
+        "not a string",
+        "surrounding whitespace",
+        "control characters"
+      ],
+      "on_invalid": "store_as_UNKNOWN"
+    },
+    "category": {
+      "max_length": 40,
+      "default_when_missing": "QUALITY",
+      "case": "upper",
+      "on_invalid": "store_as_default"
+    },
+    "severity": {
+      "values": [
+        "CRITICAL",
+        "HIGH",
+        "MEDIUM",
+        "LOW",
+        "INFO"
+      ],
+      "default_when_missing": "MEDIUM",
+      "case": "upper",
+      "on_invalid": "store_as_default"
+    },
+    "message": {
+      "max_length": 1000,
+      "on_too_long": "truncate"
+    },
+    "snippet": {
+      "max_length": 2000,
+      "on_too_long": "truncate"
+    }
+  },
+  "per_finding_problems": {
+    "rule": "A problem with one finding never rejects the upload. The finding is stored, still counts toward the quality gate, and is reported back in the response under 'finding_warnings' with its index, field and reason.",
+    "no_location_path": ""
+  },
+  "whole_upload_rejections": [
+    "authentication or authorization failure",
+    "plan does not allow the upload (uploads never require credits)",
+    "findings belong to a different project root than the selected project (PROJECT_ROOT_FINDING_MISMATCH)",
+    "verified pull-request scan cannot be verified with GitHub",
+    "request body malformed or over the size limit"
+  ],
+  "scan_metadata": {
+    "description": "The CLI sends these top-level fields alongside SARIF results. Cloud accepts bounded, well-formed values only from native Skylos SARIF. They are scanner claims, not a signature or proof of code execution. Invalid or absent metadata never removes findings or relaxes the gate.",
+    "scan_coverage": {
+      "version": 1,
+      "fields": ["scope: full_repository or partial", "complete: boolean", "selected_rules: bounded SKY-* rule ID list", "reasons: bounded string list", "resolution_covered_checks: bounded subset of explicit scanned_checks"],
+      "resolution_rule": "Cloud derives stats.resolution_covered_categories and server marker stats.resolution_coverage_version from resolution_covered_checks in a full_repository and complete receipt with no selected rules or reasons, explicit scanned_checks, static analysis, and a default-branch upload outside PR diff scope. A completed scan may exclude dependency resolution when package versions could not be resolved. Legacy or malformed receipts prove no absence-based resolution."
+    },
+    "quality_rule_classification": {
+      "version": 1,
+      "architecture_iad": ["advisory", "enforced", "unknown"],
+      "rule": "Q802 and Q803 remain actionable results when I/A/D enforcement is enabled; Cloud must not suppress these rule IDs by name. An advisory claim paired with actionable Q802 or Q803 results is recorded as unknown while the findings remain actionable."
+    },
+    "architecture_advisories": {
+      "version": 1,
+      "fields": ["module_count: nonnegative integer", "signal_count: nonnegative integer", "by_rule: counts for SKY-Q802 and SKY-Q803"],
+      "rule": "Aggregate advisory metadata is separate from SARIF results, quality counts, and gate findings. Cloud stores only validated aggregate counts."
+    },
+    "done_receipt": {
+      "version": 1,
+      "schema": "skylos.done-receipt/v1",
+      "fields": [
+        "skylos_version: version string or null",
+        "base: {sha: 7-64 lowercase hex, source: session, merge_base or head}",
+        "head: {sha: 7-64 lowercase hex, dirty: boolean}",
+        "agent: {client: lowercase id such as claude-code, codex, cursor, copilot, devin or unknown; model: string or null; session_id: string or null}",
+        "config_digest: sha256:<64 hex> or null",
+        "verdict: pass, fail or incomplete",
+        "stop_blocks: nonnegative integer (times the stop hook sent the agent back) or null outside an agent session",
+        "checks: 1-20 entries {id, rule: SKY-* or null, mode: block, advise, shadow or off, status: pass, fail, incomplete or skipped, evidence: up to 12 scalar values, findings: up to 500 {rule, file: repository-relative path, line, message up to 300 characters}}",
+        "unverified: up to 5000 {file: repository-relative path, line} changed lines no test checks"
+      ],
+      "rule": "Cloud applies the workspace's agent-check settings (agent guardrails policy agent_checks) to the result again: a check the workspace blocks on raises the reported mode unless local loosening is allowed, and a required check that is missing or skipped counts as unfinished regardless of its reported mode. A readable receipt must identify the same full head commit as the upload and dirty must be false; an unavailable full upload commit, abbreviated or mismatched receipt head, or dirty head counts as incomplete. A fail or incomplete outcome fails the quality gate until a person overrides it; a pass never lifts a gate that failed for another reason. An absent or malformed result preserves compatibility: a malformed result is stored as unreadable and changes nothing. Signed summaries preserve receipt base/head/config/version and Cloud's binding; the checks are labeled client_claim, and verified CI upload identity does not attest that tests actually ran. Cloud keeps the first 20 findings per check and the first 20 unverified lines."
+    },
+    "cleanup_receipts": {
+      "schema_version": 1,
+      "location": "optional top-level cleanup_receipts array on native Skylos SARIF, at most 20 receipts",
+      "fields": [
+        "schema_version: 1; attempt_id: UUID; task_id: 64 lowercase hex; rule_id: SKY-*; file: repository-relative path up to 500 characters; recorded_at: ISO8601 with timezone",
+        "source_sha256 and applied_sha256: 64 lowercase hex",
+        "scope: {target: . or repository-relative path, scanner_version: up to 40 version characters, config_digest: sha256:<64 lowercase hex>}",
+        "source_revision and outcome_revision: {head: full 40 lowercase hex or null, dirty: boolean or null}",
+        "status: verified, applied_unverified, failed or incomplete; applied: boolean; rolled_back: boolean. A verified claim requires applied=true, rolled_back=false, tests.status=passed, returncode=0, count>0, evidence=junit/pytest_junit/done, rescan.status=passed, new_findings_count=0, original_present=false and no failed optional behavior/rollback check",
+        "checks.tests: {status: passed, failed, skipped or incomplete; returncode: integer or null; evidence: none, exit_code, junit, pytest_junit or done; count: nonnegative integer or null; exercised_change: boolean or null}",
+        "checks.rescan: {status: passed, failed, skipped or incomplete; new_findings_count: nonnegative integer or null; original_present: boolean or null; checked_categories (optional): up to 5 values from quality, ai_defects, dead_code, security, secrets; absent means unknown, never inferred from limitations}",
+        "checks.rollback (optional): {status: passed, failed, skipped or incomplete}; checks.behavior (optional): {status: passed, failed, skipped or incomplete; model: python-source-effects-v1}",
+        "source_scan_id and source_finding_id (optional): UUID references supplied by the client, not authorization",
+        "limitations (optional): bounded subset of unbound_outcome, tests_not_observed, change_not_exercised, security_not_checked, stale_source, incomplete_scan, rollback_failed"
+      ],
+      "rule": "Display-only client claims, stored in scan JSON metadata. Never changes findings, quality gates, automated PR eligibility or issue resolution. Cloud reconstructs an allowlist and discards source text, commands, stdout, arbitrary errors, unknown fields and supplied binding. Absolute/traversal paths and malformed receipts are rejected without rejecting the scan; partial or truncated receipt metadata stays explicit. A reported clean outcome head can match the upload only when both full heads agree, the upload reports clean source, and scanner versions match. This is a head match, not independent verification of source hashes, test execution, test coverage or behavior. CI identity attests the uploader, not the recorded checks. A working-tree edit remains unbound and old checks must not be rebound to a later commit. No readable receipt by itself marks an issue fixed."
+    },
+    "supply_chain": {
+      "version": 1,
+      "location": "runs[0].properties.summary of native Skylos SARIF (legacy and v2 core payloads) and summary of the compatibility payload; dependency_inventory, ci_inventory and agent_hooks are left out of the small report-init summary",
+      "dependency_inventory": {
+        "schema": "skylos.dependency_inventory.v1",
+        "fields": ["complete: boolean; true only when every supported dependency file was read, every version was exact and nothing was cut", "truncated: boolean; true when more than 10000 packages were found", "total: nonnegative integer; packages found before the cut", "packages: up to 10000 {ecosystem: npm, pypi, go, maven, nuget, crates.io, packagist, rubygems or pub, name (PyPI names PEP 503 normalized), version, direct: boolean, dev: boolean, file: repository-relative path}, sorted by ecosystem, name, version, file and de-duplicated on that tuple"]
+      },
+      "supply_chain_posture": {
+        "schema": "skylos.supply_chain_posture.v1",
+        "fields": ["ecosystems: subset of npm, pypi", "checks: {id, status, detail up to 300 characters, paths: up to 10 repository-relative paths} for ids lockfile_committed, frozen_install_ci, install_scripts_disabled, release_age_cooldown, actions_pinned, no_pr_target_checkout", "status: pass, fail, not_applicable or unknown; pass only with evidence in the repository"]
+      },
+      "ci_inventory": {
+        "schema": "ca9.ci_inventory.v1",
+        "fields": ["status: complete, partial (unreadable files listed in skipped) or yaml_unavailable", "truncated: boolean; true when more than 200 workflows or 500 jobs, or the 100-item cap on a workflow-level list, cut the output; a job whose own lists (secret names, actions, tools, installs, downloads, publishes, indirect, runner labels ...) were cut at 100 items carries truncated: true itself, so its list is not complete", "workflows: {file: repository-relative path, provider: github or gitlab, triggers, dispatch: boolean, branch_filters: list or null, jobs, optional any_branch, called_by, caller_triggers, includes}", "jobs: {id, line, runner: {self_hosted, labels, inferred?}, environment: string or null, permissions: {write: scopes, id_token: boolean, source?}, secrets: {names: secret names only, inherit: boolean, all_via_tojson: boolean}, installs, actions: {uses, ref, pinned, line}, tools: {name, route, pinned, line}, downloads: {host, verified, reaches_publish, line}, publishes: {registry: npm, pypi or other, method: oidc, token or unknown, line}, uses_cache: boolean, optional environment_dynamic, other_tools, publish_credentials (names), calls, local_actions, indirect: [{command, line}] (optional: the build runner, container tool, test-environment manager or repository script that may install packages out of sight, such as make, docker, tox or ./scripts/ci.sh)}", "skipped (optional): up to 20 {file, reason}"],
+        "privacy": "Names only: secret names that are identifiers, download hosts (never URLs, query strings or credentials), text with token-like values replaced by [redacted], strings of at most 200 characters, and only files Git tracks or does not ignore. Both blocks are built from the repository top (the Git root), also when only a subfolder was scanned, so file paths are repository-relative; agent configs reached through symbolic links inside the repository are listed under the link path."
+      },
+      "agent_hooks": {
+        "schema": "ca9.agent_hooks.v1",
+        "fields": ["status: complete or partial; truncated: boolean (more than 200 hooks or 200 MCP servers)", "hooks: {file: repository-relative path, kind: claude_hook, claude_setting, gemini_hook, gemini_setting, cursor_hook, codex_hook or vscode_task, event, command (redacted, up to 200 characters), line, skylos_hook: boolean (written by skylos agent install-hooks, recognised by its exact command), optional matcher, label, via, handler_type}", "mcp_servers: {file, name, command (redacted, up to 200 characters), ecosystem, package, version or null, pinned: boolean, line, optional transport, fetches, launcher, url (scheme and host only)}", "env_overrides: up to 50 {file, variable, target (scheme and host only), line}", "duplicate_keys and duplicates (optional): ca9's duplicated-key records, bounded to 50 items; hooks and mcp_servers entries may carry duplicate_keys: true"],
+        "privacy": "Names only: secret names that are identifiers, download hosts (never URLs, query strings or credentials), text with token-like values replaced by [redacted], strings of at most 200 characters, and only files Git tracks or does not ignore. Both blocks are built from the repository top (the Git root), also when only a subfolder was scanned, so file paths are repository-relative; agent configs reached through symbolic links inside the repository are listed under the link path."
+      },
+      "rule": "Every block is an optional scanner claim. Old CLIs omit them, and a CLI whose ca9 engine lacks ci_inventory or agent_config omits those two; Cloud must accept uploads without them, must not infer a pass from a missing block or check, and must not let them remove findings or relax a gate."
+    }
+  },
+  "transport": {
+    "idempotency_header": "Idempotency-Key",
+    "idempotency_key_format": "UUID v4, generated once per upload and reused for every retry and resend of that upload",
+    "idempotent_replay": "Same key and same payload hash returns the original result with 200 and does not store the scan again. Same key with a different payload returns 409 IDEMPOTENCY_KEY_REUSED.",
+    "contract_header": "X-Skylos-Upload-Contract",
+    "retryable_statuses": [
+      408,
+      425,
+      429,
+      500,
+      502,
+      503,
+      504
+    ],
+    "retry_after_header": "Retry-After",
+    "error_body": {
+      "code": "stable machine code, e.g. INVALID_TOKEN",
+      "error": "one plain sentence saying what went wrong",
+      "hint": "one plain sentence saying what to do",
+      "retryable": "boolean",
+      "request_id": "id to quote to support"
+    },
+    "idempotency_retention_days": 8,
+    "client_resend_window_days": 7,
+    "client_resend_rule": "A client resends the exact bytes it originally sent (never a re-serialised body) with the same Idempotency-Key, and only within client_resend_window_days.",
+    "retryable_conflict": "A 409 whose body has retryable: true (e.g. UPLOAD_IN_PROGRESS) is retried after Retry-After, within a total retry budget of at least 300 seconds.",
+    "client_read_timeout_seconds": 270
+  },
+  "pull_request_scans": {
+    "location_less_findings": "fail_closed",
+    "rule": "On a pull-request scan, a finding without a file location counts as new unless the baseline scan has a finding with the same rule_id and no location. If there is no baseline, it counts as new. The check summary says how many findings were compared with the baseline instead of the diff.",
+    "repository_scope_findings": "Repository-level findings ('.') are compared with the baseline by rule_id, like location-less findings: new unless the baseline has the same rule at '.'.",
+    "line_zero_in_changed_file": "A finding on line 0 (or with a line_number warning) in a file the pull request changed counts as new."
+  }
+}

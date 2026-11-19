@@ -1,0 +1,49 @@
+name: Test gate mode passes on clean code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create clean sample project outside the repository
+        run: |
+          # Scanning a subdirectory of the workspace also picks up the
+          # repository's own .github/workflows (security findings), so the
+          # clean project lives outside any git repository.
+          mkdir -p "$RUNNER_TEMP/skylos-sample-clean"
+          cat > "$RUNNER_TEMP/skylos-sample-clean/hello.py" <<'EOF'
+          print("hello")
+          EOF
+      - id: action
+        uses: .
+        with:
+          path: ${{ runner.temp }}/skylos-sample-clean
+          mode: gate
+          analysis: dead-code
+      - name: Assert gate passed
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          GATE: ${{ steps.action.outputs.gate-passed }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+        run: |
+          echo "findings-count: $COUNT"
+          echo "gate-passed: $GATE"
+          echo "report-path: $REPORT"
+          if [ "$GATE" != "true" ]; then
+            echo "FAIL: expected gate-passed true"
+            exit 1
+          fi
+          if [ "$COUNT" != "0" ]; then
+            echo "FAIL: expected 0 findings"
+            exit 1
+          fi
+          if [ "$REPORT" != "skylos-report.json" ]; then
+            echo "FAIL: unexpected report path"
+            exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/skylos-report.json" ]; then
+            echo "FAIL: report file not found"
+            exit 1
+          fi
+          echo "PASS"

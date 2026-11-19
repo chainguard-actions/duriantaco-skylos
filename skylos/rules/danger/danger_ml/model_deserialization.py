@@ -1,0 +1,632 @@
+from __future__ import annotations
+
+import ast
+import sys
+
+from skylos.rules.danger.builtin_bindings import builtin_references
+from skylos.rules.danger.calls import _qualified_name_from_call, track_import_aliases
+from skylos.rules.danger.danger_ml.config_constructors import DataConstructorProof
+from skylos.rules.danger.taint import TaintVisitor
+from skylos.rules.danger.untrusted_sources import UntrustedSourceIndex
+
+
+MODEL_ARTIFACT_SUFFIXES = (
+    ".bin",
+    ".ckpt",
+    ".h5",
+    ".joblib",
+    ".keras",
+    ".pkl",
+    ".pickle",
+    ".pt",
+    ".pth",
+)
+
+REMOTE_MODEL_CALLS = {
+    "hf_hub_download",
+    "huggingface_hub.hf_hub_download",
+    "snapshot_download",
+    "huggingface_hub.snapshot_download",
+    "requests.get",
+    "requests.post",
+    "urllib.request.urlretrieve",
+    "wget.download",
+}
+
+HUGGINGFACE_ARTIFACT_CALLS = {
+    "datasets.load_dataset",
+    "hf_hub_download",
+    "huggingface_hub.hf_hub_download",
+    "huggingface_hub.snapshot_download",
+    "load_dataset",
+    "snapshot_download",
+}
+
+HUGGINGFACE_PRETRAINED_PREFIXES = (
+    "diffusers.",
+    "sentence_transformers.",
+    "transformers.",
+)
+
+HUGGINGFACE_PRETRAINED_CLASSES = {
+    "AutoConfig",
+    "AutoFeatureExtractor",
+    "AutoImageProcessor",
+    "AutoModel",
+    "AutoModelForCausalLM",
+    "AutoModelForImageClassification",
+    "AutoModelForMaskedLM",
+    "AutoModelForQuestionAnswering",
+    "AutoModelForSeq2SeqLM",
+    "AutoModelForSequenceClassification",
+    "AutoModelForTokenClassification",
+    "AutoProcessor",
+    "AutoTokenizer",
+    "StableDiffusionPipeline",
+}
+
+MUTABLE_HF_REVISIONS = {
+    "develop",
+    "dev",
+    "head",
+    "latest",
+    "main",
+    "master",
+}
+
+KERAS_LOAD_MODEL_CALLS = {
+    "keras.models.load_model",
+    "tensorflow.keras.models.load_model",
+    "tf.keras.models.load_model",
+}
+
+
+class _ModelDeserializationChecker(TaintVisitor):
+    def __init__(self, file_path, findings, *, tree=None, project_root=None):
+        super().__init__(file_path, findings)
+        self.aliases: dict[str, str] = {}
+        self.remote_model_stack: list[set[str]] = [set()]
+        self._emitted: set[tuple[int, int, str]] = set()
+        self._tree = tree
+        self._project_root = project_root
+        self._data_constructors = None
+        self._data_constructor_proof_failed = False
+        self._owners = None
+        self._parents = None
+        self._path_imports = UntrustedSourceIndex(tree) if tree is not None else None
+        self._builtin_str_refs = builtin_references(tree, {"str"}) if tree else ()
+
+    def _push(self):
+        super()._push()
+        self.remote_model_stack.append(set())
+
+    def _pop(self):
+        if len(self.remote_model_stack) > 1:
+            self.remote_model_stack.pop()
+        super()._pop()
+
+    def _mark_remote_model(self, name: str) -> None:
+        self.remote_model_stack[-1].add(name)
+
+    def _is_remote_model_name(self, name: str | None) -> bool:
+        if not name:
+            return False
+        return any(name in scope for scope in reversed(self.remote_model_stack))
+
+    def visit_Import(self, node: ast.Import) -> None:
+        track_import_aliases(self.aliases, node)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module:
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                local = alias.asname or alias.name
+                self.aliases[local] = f"{node.module}.{alias.name}"
+        self.generic_visit(node)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        is_remote = self._expr_is_remote_model(node.value)
+        for target in node.targets:
+            if isinstance(target, ast.Name) and is_remote:
+                self._mark_remote_model(target.id)
+        super().visit_Assign(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if (
+            node.value
+            and isinstance(node.target, ast.Name)
+            and self._expr_is_remote_model(node.value)
+        ):
+            self._mark_remote_model(node.target.id)
+        super().visit_AnnAssign(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        name = _qualified_name_from_call(node, self.aliases)
+        if name:
+            self._check_model_load_call(node, name)
+        if _enables_remote_code(node) and not self._is_data_constructor(node):
+            self._append_remote_code_finding(node, name)
+        self.generic_visit(node)
+
+    def _is_data_constructor(self, node: ast.Call) -> bool:
+        if self._data_constructor_proof_failed:
+            return False
+        try:
+            if self._data_constructors is None:
+                self._data_constructors = DataConstructorProof(
+                    self._tree, self.file_path, project_root=self._project_root
+                )
+            return self._data_constructors.is_data_call(node)
+        except Exception:
+            # An optional safety proof must never interrupt ML detection.
+            self._data_constructor_proof_failed = True
+            return False
+
+    def _append_remote_code_finding(self, node: ast.Call, name: str | None) -> None:
+        severity = "HIGH"
+        reason = "the repository's current code"
+        if _uses_pinned_revision(node):
+            severity = "MEDIUM"
+            reason = "code pinned to one commit"
+        elif _loads_local_path(node):
+            severity = "MEDIUM"
+            reason = "code from a local directory"
+        loader = name or "model loader"
+        self.findings.append(
+            {
+                "rule_id": "SKY-D213",
+                "severity": severity,
+                "message": (
+                    f"{loader} is called with trust_remote_code=True, which "
+                    f"imports and runs Python files shipped with the model or "
+                    f"dataset ({reason}); prefer a natively supported "
+                    "architecture, or pin revision= to a reviewed commit SHA."
+                ),
+                "file": str(self.file_path),
+                "line": int(getattr(node, "lineno", 1) or 1),
+                "col": int(getattr(node, "col_offset", 0) or 0),
+                "symbol": self._current_symbol(),
+                "metadata": {"trust_remote_code": True},
+            }
+        )
+
+    def _check_model_load_call(self, node: ast.Call, name: str) -> None:
+        if (
+            _is_huggingface_artifact_call(name)
+            and not _is_local_dataset_load(node, name)
+            and not self._loads_filesystem_path(node, name)
+        ):
+            if _call_uses_missing_or_mutable_revision(node):
+                self._append_huggingface_revision_finding(node, name)
+
+        if name == "torch.load":
+            if self._kw_is_true(node, "weights_only"):
+                return
+            self._append_model_load_finding(node, "torch.load")
+            return
+
+        if name == "numpy.load":
+            if self._kw_is_true(node, "allow_pickle"):
+                self._append_model_load_finding(node, "numpy.load allow_pickle")
+            return
+
+        if name == "joblib.load":
+            self._append_model_load_finding(node, "joblib.load")
+            return
+
+        if name in KERAS_LOAD_MODEL_CALLS:
+            self._append_model_load_finding(node, "Keras load_model")
+            return
+
+        if name == "pickle.load" and self._call_uses_model_path(node):
+            self._append_model_load_finding(node, "pickle.load on model artifact")
+
+    def _loads_filesystem_path(self, node: ast.Call, name: str) -> bool:
+        """An explicit local path or offline-only load cannot fetch a Hub id.
+
+        A Path annotation or construction alone proves neither: Transformers
+        converts the value to text and uses the Hub if no directory exists.
+        """
+        if name.rsplit(".", 1)[-1] not in {"from_pretrained", "load_dataset"}:
+            return False
+        if name.endswith(".from_pretrained") and self._kw_is_true(
+            node, "local_files_only"
+        ):
+            return True
+        reference = None
+        for keyword in ("pretrained_model_name_or_path", "path"):
+            if reference is None:
+                reference = _keyword_value(node, keyword)
+        if reference is None and node.args:
+            reference = node.args[0]
+        return self._is_filesystem_path(reference, self._owner(node), 0)
+
+    def _owner(self, node: ast.AST):
+        if self._owners is None:
+            self._owners = {}
+            pending = [(self._tree, self._tree)] if self._tree is not None else []
+            while pending:
+                current, owner = pending.pop()
+                for child in ast.iter_child_nodes(current):
+                    self._owners[id(child)] = owner
+                    inner = owner
+                    if isinstance(child, _SCOPES):
+                        inner = child
+                    pending.append((child, inner))
+        return self._owners.get(id(node))
+
+    def _is_filesystem_path(
+        self, node: ast.AST | None, scope, depth: int, *, absolute=False
+    ) -> bool:
+        if node is None or depth > _PATH_PROOF_DEPTH:
+            return False
+        if isinstance(node, ast.Constant):
+            prefixes = ("/",) if absolute else ("./", "../", "/", "~")
+            return isinstance(node.value, str) and node.value.startswith(prefixes)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return self._is_filesystem_path(node.left, scope, depth + 1, absolute=absolute)
+        if isinstance(node, ast.BoolOp):
+            return all(
+                self._is_filesystem_path(value, scope, depth + 1, absolute=absolute)
+                for value in node.values
+            )
+        if isinstance(node, ast.Attribute):
+            return node.attr == "parent" and self._is_filesystem_path(
+                node.value, scope, depth + 1, absolute=absolute
+            )
+        if isinstance(node, ast.Call):
+            spelling = _qualified_name_from_call(node) or ""
+            called = (
+                self._path_imports.resolved_import(self._owner(node), spelling)
+                if self._path_imports is not None
+                else None
+            )
+            if id(node.func) in self._builtin_str_refs:
+                called = "str"
+            if called in _PATH_STRING_CALLS:
+                return True
+            if called in _PATH_CLASSES | {
+                "os.path.normpath",
+                "os.path.expanduser",
+                "os.path.join",
+            }:
+                return bool(node.args) and self._is_filesystem_path(
+                    node.args[0], scope, depth + 1, absolute=True
+                )
+            if called in {"str", "os.fspath"} and len(node.args) == 1:
+                return self._is_filesystem_path(
+                    node.args[0], scope, depth + 1, absolute=absolute
+                )
+            if isinstance(node.func, ast.Attribute) and node.func.attr in _PATH_METHODS:
+                return self._is_filesystem_path(
+                    node.func.value, scope, depth + 1, absolute=absolute
+                )
+            return False
+        if not isinstance(node, ast.Name) or scope is None:
+            return False
+        if isinstance(scope, _FUNCTION_SCOPES):
+            arguments = scope.args
+            for parameter in (
+                *arguments.posonlyargs,
+                *arguments.args,
+                *arguments.kwonlyargs,
+                arguments.vararg,
+                arguments.kwarg,
+            ):
+                if parameter is not None and parameter.arg == node.id:
+                    return False
+        values = []
+        for inner in ast.walk(scope):
+            if self._owner(inner) is not scope and inner is not scope:
+                continue
+            if isinstance(inner, ast.Name) and inner.id == node.id:
+                if isinstance(inner.ctx, ast.Load):
+                    continue
+                binding = self._parents_of(inner)
+                if (
+                    isinstance(binding, ast.Assign)
+                    and len(binding.targets) == 1
+                    and binding.targets[0] is inner
+                ) or (isinstance(binding, ast.AnnAssign) and binding.target is inner):
+                    values.append(binding.value)
+                else:
+                    return False
+            elif isinstance(inner, (ast.Global, ast.Nonlocal)) and node.id in inner.names:
+                return False
+            elif isinstance(inner, (ast.Import, ast.ImportFrom)) and any(
+                (alias.asname or alias.name.split(".")[0]) in {node.id, "*"}
+                for alias in inner.names
+            ):
+                return False
+        return bool(values) and all(
+            self._is_filesystem_path(value, scope, depth + 1, absolute=absolute)
+            for value in values
+        )
+
+    def _parents_of(self, node: ast.AST):
+        if self._parents is None:
+            self._parents = {}
+            for parent in ast.walk(self._tree) if self._tree is not None else ():
+                for child in ast.iter_child_nodes(parent):
+                    self._parents[id(child)] = parent
+        return self._parents.get(id(node))
+
+    def _append_huggingface_revision_finding(self, node: ast.Call, call_name: str) -> None:
+        line = int(getattr(node, "lineno", 1) or 1)
+        col = int(getattr(node, "col_offset", 0) or 0)
+        key = (line, col, "huggingface-revision")
+        if key in self._emitted:
+            return
+        self._emitted.add(key)
+
+        self.findings.append(
+            {
+                "rule_id": "SKY-D345",
+                "severity": "HIGH",
+                "message": (
+                    f"Hugging Face artifact download via {call_name} uses a "
+                    "missing or mutable revision; pin revision to an immutable "
+                    "commit SHA."
+                ),
+                "file": str(self.file_path),
+                "line": line,
+                "col": col,
+                "symbol": self._current_symbol(),
+                "metadata": {"huggingface_revision": "mutable_or_missing"},
+            }
+        )
+
+    def _append_model_load_finding(self, node: ast.Call, loader: str) -> None:
+        line = int(getattr(node, "lineno", 1) or 1)
+        col = int(getattr(node, "col_offset", 0) or 0)
+        key = (line, col, loader)
+        if key in self._emitted:
+            return
+        self._emitted.add(key)
+
+        severity = "HIGH"
+        if self._call_uses_untrusted_source(node):
+            severity = "CRITICAL"
+        message = (
+            f"Unsafe ML model deserialization via {loader}; only load trusted "
+            "local model artifacts, prefer safetensors for weights, and avoid "
+            "pickle-backed formats from remote or user-controlled paths."
+        )
+        self.findings.append(
+            {
+                "rule_id": "SKY-D265",
+                "severity": severity,
+                "message": message,
+                "file": str(self.file_path),
+                "line": line,
+                "col": col,
+                "symbol": self._current_symbol(),
+                "metadata": {"ml_model_deserialization": True},
+            }
+        )
+
+    def _call_uses_untrusted_source(self, node: ast.Call) -> bool:
+        return any(self._expr_is_remote_model(arg) for arg in node.args) or any(
+            self._expr_is_remote_model(keyword.value) for keyword in node.keywords
+        )
+
+    def _call_uses_model_path(self, node: ast.Call) -> bool:
+        return any(self._expr_looks_like_model_path(arg) for arg in node.args)
+
+    def _expr_is_remote_model(self, node: ast.AST | None) -> bool:
+        if node is None:
+            return False
+        if self.is_tainted(node):
+            return True
+        if isinstance(node, ast.Name):
+            return self._is_remote_model_name(node.id)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return _is_remote_path(node.value)
+        if isinstance(node, ast.Call):
+            name = _qualified_name_from_call(node, self.aliases)
+            if name in REMOTE_MODEL_CALLS:
+                return True
+        return any(self._expr_is_remote_model(child) for child in ast.iter_child_nodes(node))
+
+    def _expr_looks_like_model_path(self, node: ast.AST | None) -> bool:
+        if node is None:
+            return False
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return _looks_like_model_artifact(node.value)
+        if isinstance(node, ast.Call):
+            name = _qualified_name_from_call(node, self.aliases)
+            if name == "open" and node.args:
+                return self._expr_looks_like_model_path(node.args[0])
+        return any(
+            self._expr_looks_like_model_path(child) for child in ast.iter_child_nodes(node)
+        )
+
+    @staticmethod
+    def _kw_is_true(node: ast.Call, keyword_name: str) -> bool:
+        return any(
+            keyword.arg == keyword_name
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is True
+            for keyword in node.keywords
+        )
+
+
+def _is_true(node: ast.AST | None) -> bool:
+    return isinstance(node, ast.Constant) and node.value is True
+
+
+def _enables_remote_code(node: ast.Call) -> bool:
+    """``trust_remote_code=True`` on the call, or in a literal options dict
+    passed to it (``model_kwargs={"trust_remote_code": True}``)."""
+    for keyword in node.keywords:
+        if keyword.arg == "trust_remote_code" and _is_true(keyword.value):
+            return True
+    for value in [*node.args, *(keyword.value for keyword in node.keywords)]:
+        if not isinstance(value, ast.Dict):
+            continue
+        for key, item in zip(value.keys, value.values):
+            if (
+                isinstance(key, ast.Constant)
+                and key.value == "trust_remote_code"
+                and _is_true(item)
+            ):
+                return True
+    return False
+
+
+def _uses_pinned_revision(node: ast.Call) -> bool:
+    revision = _keyword_value(node, "revision")
+    return (
+        isinstance(revision, ast.Constant)
+        and isinstance(revision.value, str)
+        and _is_immutable_commit_revision(revision.value)
+    )
+
+
+_MODEL_REFERENCE_KEYWORDS = (
+    "pretrained_model_name_or_path",
+    "model_name_or_path",
+    "model",
+    "model_name",
+    "path",
+)
+
+
+_PATH_PROOF_DEPTH = 6
+_FUNCTION_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+_SCOPES = (*_FUNCTION_SCOPES, ast.ClassDef)
+_PATH_CLASSES = frozenset(
+    {"pathlib.Path", "pathlib.PurePath", "pathlib.PosixPath", "pathlib.WindowsPath"}
+)
+_PATH_STRING_CALLS = frozenset(
+    {
+        "os.path.abspath",
+        "os.path.realpath",
+        "os.getcwd",
+        "pathlib.Path.cwd",
+        "pathlib.Path.home",
+    }
+)
+_PATH_METHODS = frozenset(
+    {
+        "resolve",
+        "expanduser",
+        "absolute",
+        "joinpath",
+        "with_name",
+        "with_suffix",
+        "with_stem",
+        "as_posix",
+    }
+)
+
+
+def _loads_local_path(node: ast.Call) -> bool:
+    reference = None
+    for name in _MODEL_REFERENCE_KEYWORDS:
+        if reference is None:
+            reference = _keyword_value(node, name)
+    if reference is None and node.args:
+        reference = node.args[0]
+    if not (isinstance(reference, ast.Constant) and isinstance(reference.value, str)):
+        return False
+    return reference.value.strip().startswith(("./", "../", "/", "~"))
+
+
+def _is_remote_path(value: str) -> bool:
+    lowered = value.lower()
+    return lowered.startswith(("http://", "https://", "s3://", "gs://", "hf://"))
+
+
+def _looks_like_model_artifact(value: str) -> bool:
+    return value.lower().endswith(MODEL_ARTIFACT_SUFFIXES)
+
+
+def _is_huggingface_artifact_call(name: str) -> bool:
+    if name in HUGGINGFACE_ARTIFACT_CALLS:
+        return True
+    if not name.endswith(".from_pretrained"):
+        return False
+    receiver = name.rsplit(".", 1)[0]
+    if receiver.startswith(HUGGINGFACE_PRETRAINED_PREFIXES):
+        return True
+    return receiver.rsplit(".", 1)[-1] in HUGGINGFACE_PRETRAINED_CLASSES
+
+
+# Builders packaged inside ``datasets``: ``load_dataset("json", data_files=...)``
+# parses the given files with library code; nothing is fetched from the Hub.
+PACKAGED_DATASET_BUILDERS = frozenset(
+    {
+        "arrow", "audiofolder", "csv", "generator", "imagefolder", "json",
+        "pandas", "parquet", "sql", "text", "videofolder", "webdataset", "xml",
+    }
+)  # fmt: skip
+
+
+def _is_local_dataset_load(node: ast.Call, name: str) -> bool:
+    if name.rsplit(".", 1)[-1] != "load_dataset":
+        return False
+    path = node.args[0] if node.args else _keyword_value(node, "path")
+    if not (isinstance(path, ast.Constant) and isinstance(path.value, str)):
+        return False
+    value = path.value.strip()
+    if value.startswith(("./", "../", "/", "~")):
+        return True
+    if value not in PACKAGED_DATASET_BUILDERS:
+        return False
+    # Remote data files are still mutable downloads.
+    data_files = _keyword_value(node, "data_files")
+    if data_files is not None:
+        for sub in ast.walk(data_files):
+            if (
+                isinstance(sub, ast.Constant)
+                and isinstance(sub.value, str)
+                and sub.value.startswith(("http://", "https://", "hf://"))
+            ):
+                return False
+    return True
+
+
+def _call_uses_missing_or_mutable_revision(node: ast.Call) -> bool:
+    revision = _keyword_value(node, "revision")
+    if revision is None:
+        return True
+    if isinstance(revision, ast.Constant):
+        if revision.value is None:
+            return True
+        if isinstance(revision.value, str):
+            return not _is_immutable_commit_revision(revision.value)
+    return False
+
+
+def _keyword_value(node: ast.Call, name: str) -> ast.AST | None:
+    for keyword in node.keywords:
+        if keyword.arg == name:
+            return keyword.value
+    return None
+
+
+def _is_immutable_commit_revision(value: str) -> bool:
+    revision = value.strip()
+    if revision.lower() in MUTABLE_HF_REVISIONS:
+        return False
+    if revision.startswith(("refs/heads/", "refs/pr/")):
+        return False
+    return len(revision) == 40 and all(
+        char in "0123456789abcdefABCDEF" for char in revision
+    )
+
+
+def scan(tree, file_path, findings, *, project_root=None):
+    try:
+        checker = _ModelDeserializationChecker(
+            file_path, findings, tree=tree, project_root=project_root
+        )
+        checker.visit(tree)
+    except Exception as e:
+        print(
+            f"ML model deserialization analysis failed for {file_path}: {e}",
+            file=sys.stderr,
+        )

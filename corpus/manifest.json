@@ -1,0 +1,2471 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "flask-route-handler",
+      "path": "fixtures/flask_route_handler",
+      "description": "Flask route handlers are framework entrypoints, not dead code.",
+      "source": {
+        "repo": "https://github.com/pallets/flask",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Flask route patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "index"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "catalogue"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fastapi-depends-route",
+      "path": "fixtures/fastapi_depends_route",
+      "description": "FastAPI route functions and Depends providers should stay alive.",
+      "source": {
+        "repo": "https://github.com/fastapi/fastapi",
+        "license": "MIT",
+        "notes": "Distilled from official FastAPI dependency injection patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "get_db",
+            "read_root"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "read_status"
+          ]
+        }
+      }
+    },
+    {
+      "id": "celery-task",
+      "path": "fixtures/celery_task",
+      "description": "Celery tasks are worker entrypoints and should not be flagged.",
+      "source": {
+        "repo": "https://github.com/celery/celery",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Celery task declaration patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "add"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "multiply"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pluggy-hookimpl",
+      "path": "fixtures/pluggy_hookimpl",
+      "description": "Pluggy hook implementations are invoked by the plugin manager.",
+      "source": {
+        "repo": "https://github.com/pytest-dev/pluggy",
+        "license": "MIT",
+        "notes": "Distilled from official Pluggy hook implementation patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "my_hook"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "render_report"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pytest-plugin-hooks",
+      "path": "fixtures/pytest_plugin_hooks",
+      "description": "Pytest plugin hooks should not regress into dead-code findings.",
+      "source": {
+        "repo": "https://github.com/pytest-dev/pytest",
+        "license": "MIT",
+        "notes": "Distilled from official pytest plugin hook names."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "pytest_addhooks",
+            "pytest_cmdline_main",
+            "pytest_assertrepr_compare"
+          ],
+          "unused_parameters": [
+            "config",
+            "op",
+            "left",
+            "right"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "serialize_comparison"
+          ],
+          "unused_parameters": [
+            "render_style"
+          ]
+        }
+      }
+    },
+    {
+      "id": "typer-callback",
+      "path": "fixtures/typer_callback",
+      "description": "Typer callback functions are CLI entrypoints.",
+      "source": {
+        "repo": "https://github.com/fastapi/typer",
+        "license": "MIT",
+        "notes": "Distilled from official Typer callback patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "main"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "configure_display"
+          ]
+        }
+      }
+    },
+    {
+      "id": "starlette-add-route",
+      "path": "fixtures/starlette_add_route",
+      "description": "Imperative Starlette route registration should keep handlers alive.",
+      "source": {
+        "repo": "https://github.com/encode/starlette",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Starlette imperative routing patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "homepage"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "status_page"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sanic-register-listener",
+      "path": "fixtures/sanic_register_listener",
+      "description": "Sanic listener registration should keep async callbacks alive.",
+      "source": {
+        "repo": "https://github.com/sanic-org/sanic",
+        "license": "MIT",
+        "notes": "Distilled from official Sanic listener registration patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "before_start"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "after_boot"
+          ]
+        }
+      }
+    },
+    {
+      "id": "django-urlpatterns",
+      "path": "fixtures/django_urlpatterns.py",
+      "description": "Django URL patterns should keep view functions alive.",
+      "source": {
+        "repo": "https://github.com/django/django",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Django URL routing patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "home"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "status"
+          ]
+        }
+      }
+    },
+    {
+      "id": "django-error-handlers",
+      "path": "fixtures/django_error_handlers",
+      "description": "Django root URLconf error handler aliases should not be flagged as dead variables.",
+      "source": {
+        "repo": "https://github.com/daveisfera/skylos-repro",
+        "license": "Unlicense",
+        "notes": "Distilled from issue #619's Django error handler false-positive repro."
+      },
+      "expect": {
+        "absent": {
+          "unused_variables": [
+            "handler400",
+            "handler403",
+            "handler404",
+            "handler500"
+          ]
+        },
+        "present": {
+          "unused_variables": [
+            "fallback_callback"
+          ]
+        }
+      }
+    },
+    {
+      "id": "django-path-converter",
+      "path": "fixtures/django_path_converter",
+      "description": "Django custom path converter protocol members should stay alive when the converter class is registered in URLconf.",
+      "source": {
+        "repo": "https://github.com/django/django",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from the official Django custom path converter documentation and issue #619."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "to_python",
+            "to_url",
+            "DateCodec.decode_date",
+            "DateCodec.encode_date"
+          ],
+          "unused_variables": [
+            "regex"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "DateParser.decode_date",
+            "DateParser.encode_date"
+          ],
+          "unused_variables": [
+            "date_pattern"
+          ],
+          "unused_classes": [
+            "DateCodec"
+          ]
+        }
+      }
+    },
+    {
+      "id": "gunicorn-config",
+      "path": "fixtures/gunicorn_config.py",
+      "description": "Gunicorn config settings and lifecycle hooks should not be flagged as dead code.",
+      "source": {
+        "repo": "https://github.com/daveisfera/skylos-repro",
+        "license": "Unlicense",
+        "notes": "Distilled from issue #619's Gunicorn config false-positive repro."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "worker_exit"
+          ],
+          "unused_variables": [
+            "bind",
+            "forwarded_allow_ips",
+            "secure_scheme_headers",
+            "workers",
+            "threads",
+            "worker_class",
+            "timeout",
+            "graceful_timeout",
+            "chdir",
+            "preload_app",
+            "control_socket_disable"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "on_message"
+          ],
+          "unused_variables": [
+            "worker_hint"
+          ]
+        }
+      }
+    },
+    {
+      "id": "django-class-based-view",
+      "path": "fixtures/django_cbv.py",
+      "description": "Django class-based views should not be treated as dead framework classes.",
+      "source": {
+        "repo": "https://github.com/django/django",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Django class-based view patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "get",
+            "PageFormatter.format_page"
+          ],
+          "unused_classes": [
+            "HomeView"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "PageRenderer.format_page"
+          ],
+          "unused_classes": [
+            "PageFormatter"
+          ]
+        }
+      }
+    },
+    {
+      "id": "drf-viewset",
+      "path": "fixtures/drf_viewset.py",
+      "description": "DRF viewsets should keep action methods and classes alive.",
+      "source": {
+        "repo": "https://github.com/encode/django-rest-framework",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Django REST Framework viewset patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "list",
+            "PreviewActions.preview"
+          ],
+          "unused_classes": [
+            "UserViewSet"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "ActionPreview.preview"
+          ],
+          "unused_classes": [
+            "PreviewActions"
+          ]
+        }
+      }
+    },
+    {
+      "id": "drf-serializer",
+      "path": "fixtures/drf_serializer.py",
+      "description": "DRF serializer classes, fields, and validator methods are framework-owned.",
+      "source": {
+        "repo": "https://github.com/encode/django-rest-framework",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Django REST Framework serializer patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "validate_email",
+            "ContactRecord.normalize_address"
+          ],
+          "unused_classes": [
+            "UserSerializer"
+          ],
+          "unused_variables": [
+            "email"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "ContactFormatter.normalize_address"
+          ],
+          "unused_classes": [
+            "ContactRecord"
+          ],
+          "unused_variables": [
+            "address"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sqlalchemy-model",
+      "path": "fixtures/sqlalchemy_model.py",
+      "description": "SQLAlchemy declarative model classes and columns should not regress into dead-code reports.",
+      "source": {
+        "repo": "https://github.com/sqlalchemy/sqlalchemy",
+        "license": "MIT",
+        "notes": "Distilled from official SQLAlchemy declarative model patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "User"
+          ],
+          "unused_variables": [
+            "id",
+            "name"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "AuditRow"
+          ],
+          "unused_variables": [
+            "row_id",
+            "title"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fastapi-pydantic-model",
+      "path": "fixtures/fastapi_pydantic_model.py",
+      "description": "FastAPI route models and pydantic validators should stay alive.",
+      "source": {
+        "repo": "https://github.com/fastapi/fastapi",
+        "license": "MIT",
+        "notes": "Distilled from official FastAPI request-model patterns with Pydantic."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "create_user",
+            "validate_email",
+            "DraftPayload.clean_contact"
+          ],
+          "unused_classes": [
+            "UserIn"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "PayloadCleaner.clean_contact",
+            "preview_user"
+          ],
+          "unused_classes": [
+            "DraftPayload"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pydantic-settings-model",
+      "path": "fixtures/pydantic_settings_model.py",
+      "description": "Pydantic settings models should not be flagged as dead classes.",
+      "source": {
+        "repo": "https://github.com/pydantic/pydantic-settings",
+        "license": "MIT",
+        "notes": "Distilled from official BaseSettings patterns."
+      },
+      "fixture_notes": "Settings is explicitly constructed and api_url read, providing a visible consumer of the class and its settings field.",
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "Settings"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "SettingsSnapshot"
+          ]
+        }
+      }
+    },
+    {
+      "id": "aiohttp-routes",
+      "path": "fixtures/aiohttp_routes.py",
+      "description": "aiohttp route table decorators should keep handlers alive.",
+      "source": {
+        "repo": "https://github.com/aio-libs/aiohttp",
+        "license": "Apache-2.0",
+        "notes": "Distilled from official aiohttp route table patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "hello"
+          ],
+          "unused_parameters": [
+            "request"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "metadata"
+          ],
+          "unused_parameters": [
+            "format_style"
+          ]
+        }
+      }
+    },
+    {
+      "id": "attrs-define-fields",
+      "path": "fixtures/attrs_define.py",
+      "description": "attrs fields should not be reported as unused variables.",
+      "source": {
+        "repo": "https://github.com/python-attrs/attrs",
+        "license": "MIT",
+        "notes": "Distilled from official attrs class definition patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_variables": [
+            "id",
+            "name"
+          ]
+        },
+        "present": {
+          "unused_variables": [
+            "account_id",
+            "display_name"
+          ]
+        }
+      }
+    },
+    {
+      "id": "always-false-loop",
+      "path": "fixtures/always_false_loop.py",
+      "description": "An always-false loop body should be reported as unreachable dead branch.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Language-level control-flow edge case."
+      },
+      "scan": {
+        "enable_quality": true
+      },
+      "expect": {
+        "absent": {},
+        "present": {
+          "quality": [
+            "SKY-UC001",
+            "while_false"
+          ]
+        }
+      }
+    },
+    {
+      "id": "marshmallow-schema",
+      "path": "fixtures/marshmallow_schema.py",
+      "description": "Marshmallow schema classes and lifecycle hooks should not be treated as dead code.",
+      "source": {
+        "repo": "https://github.com/marshmallow-code/marshmallow",
+        "license": "MIT",
+        "notes": "Distilled from official Marshmallow schema hook patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "make_user",
+            "PayloadParser.parse_item"
+          ],
+          "unused_classes": [
+            "UserSchema"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "ItemLoader.parse_item"
+          ],
+          "unused_classes": [
+            "PayloadParser"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sqlalchemy-event-listener",
+      "path": "fixtures/sqlalchemy_event_listener.py",
+      "description": "Imperative SQLAlchemy event listeners should keep callbacks alive.",
+      "source": {
+        "repo": "https://github.com/sqlalchemy/sqlalchemy",
+        "license": "MIT",
+        "notes": "Distilled from official SQLAlchemy event registration patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "on_connect"
+          ],
+          "unused_parameters": [
+            "dbapi_connection",
+            "connection_record"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "connection_closed"
+          ],
+          "unused_parameters": [
+            "label_style"
+          ]
+        }
+      }
+    },
+    {
+      "id": "flask-add-url-rule",
+      "path": "fixtures/flask_add_url_rule.py",
+      "description": "Imperative Flask route registration should keep handlers alive.",
+      "source": {
+        "repo": "https://github.com/pallets/flask",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Flask add_url_rule patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "list_users"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "create_report"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fastapi-add-api-route",
+      "path": "fixtures/fastapi_add_api_route.py",
+      "description": "Imperative FastAPI route registration should keep endpoint callables alive.",
+      "source": {
+        "repo": "https://github.com/fastapi/fastapi",
+        "license": "MIT",
+        "notes": "Distilled from official FastAPI add_api_route patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "read_items"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "search_items"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fastapi-include-router",
+      "path": "fixtures/fastapi_include_router.py",
+      "description": "APIRouter handlers should stay alive when the router is included on the app.",
+      "source": {
+        "repo": "https://github.com/fastapi/fastapi",
+        "license": "MIT",
+        "notes": "Distilled from official APIRouter include_router patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "ping"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "status_payload"
+          ]
+        }
+      }
+    },
+    {
+      "id": "django-management-command",
+      "path": "fixtures/django_management_command.py",
+      "description": "Django management command handlers are framework entrypoints.",
+      "source": {
+        "repo": "https://github.com/django/django",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Django management command patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "handle"
+          ],
+          "unused_classes": [
+            "Command"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "CommandPreview"
+          ],
+          "unused_functions": [
+            "parse_command"
+          ]
+        }
+      }
+    },
+    {
+      "id": "django-signal-receiver",
+      "path": "fixtures/django_signal_receiver.py",
+      "description": "Django signal receivers should not be reported as dead code.",
+      "source": {
+        "repo": "https://github.com/django/django",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Django receiver patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "on_save"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "on_archive"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sqlalchemy-listens-for",
+      "path": "fixtures/sqlalchemy_listens_for.py",
+      "description": "Decorator-based SQLAlchemy event listeners should keep callbacks alive.",
+      "source": {
+        "repo": "https://github.com/sqlalchemy/sqlalchemy",
+        "license": "MIT",
+        "notes": "Distilled from official SQLAlchemy @event.listens_for patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "on_connect"
+          ],
+          "unused_parameters": [
+            "dbapi_connection",
+            "connection_record"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "on_disconnect"
+          ],
+          "unused_parameters": [
+            "audit_token"
+          ]
+        }
+      }
+    },
+    {
+      "id": "marshmallow-validates-schema",
+      "path": "fixtures/marshmallow_validates_schema.py",
+      "description": "Marshmallow schema validators are framework-owned callbacks.",
+      "source": {
+        "repo": "https://github.com/marshmallow-code/marshmallow",
+        "license": "MIT",
+        "notes": "Distilled from official Marshmallow validates_schema patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "validate_schema"
+          ],
+          "unused_classes": [
+            "UserSchema"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "PayloadValidator"
+          ],
+          "unused_functions": [
+            "validate_record"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-cached-property",
+      "path": "fixtures/python_cached_property.py",
+      "description": "cached_property accessors are runtime attributes, not dead methods.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Language-level descriptor pattern."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "timeout"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "interval"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-property-chain",
+      "path": "fixtures/python_property_chain.py",
+      "description": "Property getters and setters should stay alive as a linked descriptor chain.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Language-level property descriptor pattern."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "name"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "label"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-type-checking-imports",
+      "path": "fixtures/python_type_checking.py",
+      "description": "TYPE_CHECKING-only imports used in annotations should not be flagged as unused imports.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Language-level typing pattern."
+      },
+      "expect": {
+        "absent": {
+          "unused_imports": [
+            "User"
+          ]
+        },
+        "present": {
+          "unused_imports": [
+            "decimal"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-public-api-exports",
+      "path": "fixtures/python_public_api",
+      "description": "Explicit package exports in __init__.py/__all__ should protect public API symbols.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Language-level public API export pattern."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "public_function"
+          ],
+          "unused_classes": [
+            "PublicClass"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "RecordDraft"
+          ],
+          "unused_functions": [
+            "parse_record"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-pyproject-entrypoint",
+      "path": "fixtures/python_pyproject_entrypoint",
+      "description": "PEP 621 script entrypoints declared in pyproject.toml should keep target callables alive.",
+      "source": {
+        "repo": "https://packaging.python.org",
+        "license": "PSF-2.0",
+        "notes": "Packaging-level console script pattern."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "main"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "inspect_environment"
+          ]
+        }
+      }
+    },
+    {
+      "id": "django-admin-register",
+      "path": "fixtures/django_admin_register.py",
+      "description": "Django admin registrations should keep admin classes alive.",
+      "source": {
+        "repo": "https://github.com/django/django",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Django admin registration patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "UserAdmin"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "AdminDraft"
+          ]
+        }
+      }
+    },
+    {
+      "id": "django-appconfig-ready",
+      "path": "fixtures/django_appconfig.py",
+      "description": "Django AppConfig classes and ready hooks are framework lifecycle entrypoints.",
+      "source": {
+        "repo": "https://github.com/django/django",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Django AppConfig patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "DemoConfig"
+          ],
+          "unused_functions": [
+            "ready"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "StagingConfig"
+          ],
+          "unused_functions": [
+            "inspect_config"
+          ]
+        }
+      }
+    },
+    {
+      "id": "celery-task-class",
+      "path": "fixtures/celery_task_class.py",
+      "description": "Custom Celery task subclasses and run methods should not be reported as dead code.",
+      "source": {
+        "repo": "https://github.com/celery/celery",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from official Celery Task subclass patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "DemoTask"
+          ],
+          "unused_functions": [
+            "run"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "TaskDraft"
+          ],
+          "unused_functions": [
+            "queue_payload"
+          ]
+        }
+      }
+    },
+    {
+      "id": "click-command-subclass",
+      "path": "fixtures/click_command_subclass.py",
+      "description": "Click command subclasses and invoke methods should stay alive.",
+      "source": {
+        "repo": "https://github.com/pallets/click",
+        "license": "BSD-3-Clause",
+        "notes": "Distilled from Click command subclass patterns."
+      },
+      "policy_controls": [
+        {
+          "source_symbol": "format_arguments",
+          "source_reason": "This source-owned function has no caller or registration in the closed fixture. It remains a dead-source control; its expected report disposition is recorded separately.",
+          "present_category": "dead_code_abstentions",
+          "absent_category": "unused_functions",
+          "policy_reason": "weak helper function"
+        }
+      ],
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "DemoCommand"
+          ],
+          "unused_functions": [
+            "invoke",
+            "format_arguments"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "CommandDraft"
+          ],
+          "dead_code_abstentions": [
+            "format_arguments"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pydantic-computed-field",
+      "path": "fixtures/pydantic_computed_field.py",
+      "description": "Pydantic computed fields are runtime-backed descriptors, not dead methods.",
+      "source": {
+        "repo": "https://github.com/pydantic/pydantic",
+        "license": "MIT",
+        "notes": "Distilled from Pydantic computed_field patterns."
+      },
+      "policy_controls": [
+        {
+          "source_symbol": "compose_name",
+          "source_reason": "This source-owned function has no caller or registration in the closed fixture. It remains a dead-source control; its expected report disposition is recorded separately.",
+          "present_category": "dead_code_abstentions",
+          "absent_category": "unused_functions",
+          "policy_reason": "weak helper function"
+        }
+      ],
+      "fixture_notes": "Constructed User.model_dump() provides actual model use; compose_name remains an unreferenced helper whose declared policy is recorded separately.",
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "User"
+          ],
+          "unused_functions": [
+            "full_name",
+            "compose_name"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "PreviewRecord"
+          ],
+          "dead_code_abstentions": [
+            "compose_name"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pydantic-serializer-hooks",
+      "path": "fixtures/pydantic_serializer_hooks.py",
+      "description": "Pydantic serializer hooks should not be treated as dead callback methods.",
+      "source": {
+        "repo": "https://github.com/pydantic/pydantic",
+        "license": "MIT",
+        "notes": "Distilled from field_serializer/model_serializer patterns."
+      },
+      "fixture_notes": "User(name=\"Ada\").model_dump() calls the wrap model serializer, whose handler(self) delegate reaches the default field serializer; both original serializer guards have actual runtime-use witnesses.",
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "User"
+          ],
+          "unused_functions": [
+            "serialize_name",
+            "serialize_model"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "SerializationDraft"
+          ],
+          "unused_functions": [
+            "serialize_title",
+            "serialize_snapshot"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pydantic-model-post-init",
+      "path": "fixtures/pydantic_model_post_init.py",
+      "description": "Pydantic lifecycle hooks like model_post_init should not regress into dead-code findings.",
+      "source": {
+        "repo": "https://github.com/pydantic/pydantic",
+        "license": "MIT",
+        "notes": "Distilled from Pydantic model lifecycle patterns."
+      },
+      "fixture_notes": "User is now explicitly constructed, providing a source witness for model_post_init and class use.",
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "User"
+          ],
+          "unused_functions": [
+            "model_post_init"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "ProfileDraft"
+          ],
+          "unused_functions": [
+            "prepare_profile"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-enum-members",
+      "path": "fixtures/python_enum_members.py",
+      "description": "Enum members are runtime-accessed through the enum class and should not be flagged as dead variables.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Language-level Enum pattern."
+      },
+      "expect": {
+        "absent": {
+          "unused_variables": [
+            "RED",
+            "BLUE"
+          ]
+        },
+        "present": {
+          "unused_variables": [
+            "SHADE"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-abstract-base",
+      "path": "fixtures/python_abstract_base.py",
+      "description": "Abstract base class declarations are contracts, not dead code.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Language-level abstractmethod contract."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "run"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "process"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-protocol-implementation",
+      "path": "fixtures/python_protocol_impl.py",
+      "description": "Protocol implementations should not regress into dead method findings.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Language-level Protocol implementation pattern."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "run"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "stop"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sqlalchemy-hybrid-property",
+      "path": "fixtures/sqlalchemy_hybrid_property.py",
+      "description": "SQLAlchemy hybrid properties behave like descriptors and should not be flagged as dead methods.",
+      "source": {
+        "repo": "https://github.com/sqlalchemy/sqlalchemy",
+        "license": "MIT",
+        "notes": "Distilled from SQLAlchemy hybrid_property patterns."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "full_name"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "render_name"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-unittest-lifecycle",
+      "path": "fixtures/python_unittest_lifecycle",
+      "description": "unittest lifecycle hooks should not be reported as dead code in test files.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Language-level unittest lifecycle pattern."
+      },
+      "policy_controls": [
+        {
+          "source_symbol": "prepare_record",
+          "source_reason": "This source-owned function has no caller or registration in the closed fixture. It remains a dead-source control; its expected report disposition is recorded separately.",
+          "present_category": "whitelisted",
+          "absent_category": "unused_functions",
+          "policy_reason": "test-only path"
+        }
+      ],
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "setUpClass",
+            "tearDownClass",
+            "setUpModule",
+            "tearDownModule",
+            "prepare_record"
+          ]
+        },
+        "present": {
+          "whitelisted": [
+            "prepare_record"
+          ],
+          "unused_functions": [
+            "publish_record"
+          ]
+        }
+      }
+    },
+    {
+      "id": "runtime-dependent-loop",
+      "path": "fixtures/runtime_loop.py",
+      "description": "A loop whose condition depends on an input collection remains reachable.",
+      "paired_with": "always-false-loop",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Original local control for the Python language-level always-false loop case; no upstream source copied."
+      },
+      "scan": {
+        "enable_quality": true
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            "SKY-UC001",
+            "while_false"
+          ]
+        },
+        "present": {}
+      }
+    },
+    {
+      "id": "pydantic-model-use-boundary",
+      "path": "fixtures/pydantic_model_use.py",
+      "description": "Constructed model/settings classes stay live while unreferenced siblings remain findings.",
+      "paired_with": "pydantic-computed-field",
+      "source": {
+        "repo": "https://github.com/pydantic/pydantic",
+        "license": "MIT",
+        "notes": "Original local controls for BaseModel and pydantic-settings BaseSettings construction and field reads; no upstream source copied."
+      },
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "ProfileModel",
+            "RuntimeSettings"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "DraftModel",
+            "DraftSettings"
+          ]
+        }
+      }
+    },
+    {
+      "id": "typing-protocol-attributes",
+      "path": "fixtures/typing_protocol_attributes.py",
+      "description": "Attributes declared on a typing.Protocol are contract members, not dead code.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Distilled from the PEP 544 protocol examples in the CPython typing documentation."
+      },
+      "expect": {
+        "absent": {
+          "unused_variables": [
+            "table_name"
+          ]
+        },
+        "present": {
+          "unused_variables": [
+            "stale_store_name",
+            "stale_transport_limit",
+            "LOAD"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cleanup-async-blocking-problematic",
+      "path": "fixtures/cleanup_async_blocking_problematic",
+      "description": "A synchronous HTTP request inside a coroutine blocks its event-loop thread.",
+      "paired_with": "cleanup-async-blocking-control",
+      "source": {
+        "repo": "https://github.com/astral-sh/ruff",
+        "url": "https://github.com/astral-sh/ruff/blob/25c2129f4ef1f0048b36c329502f57ee64ba6f53/crates/ruff_linter/src/rules/flake8_async/rules/blocking_http_call.rs",
+        "revision": "25c2129f4ef1f0048b36c329502f57ee64ba6f53",
+        "license": "MIT",
+        "notes": "Concept reference: Ruff ASYNC210 documentation at the pinned revision (MIT). This is an independently authored reproduction, with no upstream source copied; fixture code is original Skylos code under Apache-2.0."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {},
+        "present": {
+          "quality": [
+            {
+              "rule_id": "SKY-Q401",
+              "file": "app.py",
+              "start_line": 5,
+              "end_line": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cleanup-async-blocking-control",
+      "path": "fixtures/cleanup_async_blocking_control",
+      "description": "The paired coroutine awaits an asynchronous HTTP client request.",
+      "paired_with": "cleanup-async-blocking-problematic",
+      "source": {
+        "repo": "https://github.com/astral-sh/ruff",
+        "url": "https://github.com/astral-sh/ruff/blob/25c2129f4ef1f0048b36c329502f57ee64ba6f53/crates/ruff_linter/src/rules/flake8_async/rules/blocking_http_call.rs",
+        "revision": "25c2129f4ef1f0048b36c329502f57ee64ba6f53",
+        "license": "MIT",
+        "notes": "Concept reference: Ruff ASYNC210 documentation at the pinned revision (MIT). This is an independently authored reproduction, with no upstream source copied; fixture code is original Skylos code under Apache-2.0."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            {
+              "rule_id": "SKY-Q401",
+              "file": "app.py",
+              "start_line": 6,
+              "end_line": 6
+            }
+          ]
+        },
+        "present": {}
+      }
+    },
+    {
+      "id": "cleanup-mutable-default-problematic",
+      "path": "fixtures/cleanup_mutable_default_problematic",
+      "description": "Mutating a default dictionary leaks badge assignments across calls that omit the mapping.",
+      "paired_with": "cleanup-mutable-default-control",
+      "source": {
+        "repo": "https://github.com/astral-sh/ruff",
+        "url": "https://github.com/astral-sh/ruff/blob/25c2129f4ef1f0048b36c329502f57ee64ba6f53/crates/ruff_linter/src/rules/flake8_bugbear/rules/mutable_argument_default.rs",
+        "revision": "25c2129f4ef1f0048b36c329502f57ee64ba6f53",
+        "license": "MIT",
+        "notes": "Concept reference: Ruff B006 documentation at the pinned revision (MIT). This is an independently authored reproduction, with no upstream source copied; fixture code is original Skylos code under Apache-2.0."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {},
+        "present": {
+          "quality": [
+            {
+              "rule_id": "SKY-L001",
+              "file": "app.py",
+              "start_line": 1,
+              "end_line": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cleanup-mutable-default-control",
+      "path": "fixtures/cleanup_mutable_default_control",
+      "description": "A None default creates a fresh mapping for each call that omits it.",
+      "paired_with": "cleanup-mutable-default-problematic",
+      "source": {
+        "repo": "https://github.com/astral-sh/ruff",
+        "url": "https://github.com/astral-sh/ruff/blob/25c2129f4ef1f0048b36c329502f57ee64ba6f53/crates/ruff_linter/src/rules/flake8_bugbear/rules/mutable_argument_default.rs",
+        "revision": "25c2129f4ef1f0048b36c329502f57ee64ba6f53",
+        "license": "MIT",
+        "notes": "Concept reference: Ruff B006 documentation at the pinned revision (MIT). This is an independently authored reproduction, with no upstream source copied; fixture code is original Skylos code under Apache-2.0."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            {
+              "rule_id": "SKY-L001",
+              "file": "app.py",
+              "start_line": 1,
+              "end_line": 1
+            }
+          ]
+        },
+        "present": {}
+      }
+    },
+    {
+      "id": "test-quality-constant-assertion-problematic",
+      "path": "fixtures/test_quality_constant_assertion_problematic",
+      "paired_with": "test-quality-constant-assertion-control",
+      "description": "A literal-true assertion does not check a runtime result; the counterpart checks an actual function result.",
+      "source": {
+        "repo": "https://github.com/JetBrains-Research/PyNose",
+        "license": "Apache-2.0",
+        "revision": "081e5f9dcc416da4a290bcc5102ce46f104afefa",
+        "url": "https://github.com/JetBrains-Research/PyNose/tree/081e5f9dcc416da4a290bcc5102ce46f104afefa/plugin/src/test/resources/org/jetbrains/research/pynose/plugin/inspections/data/redundant_assertion",
+        "notes": "Independently authored reproduction of the named test-quality concept; fixture code inherits Skylos Apache-2.0. External fixture annotations are references, not imported detector logic or independent accuracy labels."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "present": {
+          "quality": [
+            {
+              "rule_id": "SKY-L040",
+              "file": "test_case.py",
+              "start_line": 2,
+              "end_line": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-constant-assertion-control",
+      "path": "fixtures/test_quality_constant_assertion_control",
+      "paired_with": "test-quality-constant-assertion-problematic",
+      "description": "A literal-true assertion does not check a runtime result; the counterpart checks an actual function result.",
+      "source": {
+        "repo": "https://github.com/JetBrains-Research/PyNose",
+        "license": "Apache-2.0",
+        "revision": "081e5f9dcc416da4a290bcc5102ce46f104afefa",
+        "url": "https://github.com/JetBrains-Research/PyNose/tree/081e5f9dcc416da4a290bcc5102ce46f104afefa/plugin/src/test/resources/org/jetbrains/research/pynose/plugin/inspections/data/redundant_assertion",
+        "notes": "Independently authored reproduction of the named test-quality concept; fixture code inherits Skylos Apache-2.0. External fixture annotations are references, not imported detector logic or independent accuracy labels."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            {
+              "rule_id": "SKY-L040",
+              "file": "test_case.py",
+              "start_line": 6,
+              "end_line": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-empty-test-problematic",
+      "path": "fixtures/test_quality_empty_test_problematic",
+      "paired_with": "test-quality-empty-test-control",
+      "description": "A placeholder-only test body merits review; the counterpart delegates to an asserting helper.",
+      "source": {
+        "repo": "https://github.com/JetBrains-Research/PyNose",
+        "license": "Apache-2.0",
+        "revision": "081e5f9dcc416da4a290bcc5102ce46f104afefa",
+        "url": "https://github.com/JetBrains-Research/PyNose/tree/081e5f9dcc416da4a290bcc5102ce46f104afefa/plugin/src/test/resources/org/jetbrains/research/pynose/plugin/inspections/data/empty_test",
+        "notes": "Independently authored reproduction of the named test-quality concept; fixture code inherits Skylos Apache-2.0. External fixture annotations are references, not imported detector logic or independent accuracy labels."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "present": {
+          "quality": [
+            {
+              "rule_id": "SKY-L041",
+              "file": "test_case.py",
+              "start_line": 1,
+              "end_line": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-empty-test-control",
+      "path": "fixtures/test_quality_empty_test_control",
+      "paired_with": "test-quality-empty-test-problematic",
+      "description": "A placeholder-only test body merits review; the counterpart delegates to an asserting helper.",
+      "source": {
+        "repo": "https://github.com/JetBrains-Research/PyNose",
+        "license": "Apache-2.0",
+        "revision": "081e5f9dcc416da4a290bcc5102ce46f104afefa",
+        "url": "https://github.com/JetBrains-Research/PyNose/tree/081e5f9dcc416da4a290bcc5102ce46f104afefa/plugin/src/test/resources/org/jetbrains/research/pynose/plugin/inspections/data/empty_test",
+        "notes": "Independently authored reproduction of the named test-quality concept; fixture code inherits Skylos Apache-2.0. External fixture annotations are references, not imported detector logic or independent accuracy labels."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            {
+              "rule_id": "SKY-L041",
+              "file": "test_case.py",
+              "start_line": 5,
+              "end_line": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-duplicate-assertion-problematic",
+      "path": "fixtures/test_quality_duplicate_assertion_problematic",
+      "paired_with": "test-quality-duplicate-assertion-control",
+      "description": "An adjacent repeated assertion over a proven builtin integer adds no distinct check; the counterpart checks another property.",
+      "source": {
+        "repo": "https://github.com/JetBrains-Research/PyNose",
+        "license": "Apache-2.0",
+        "revision": "081e5f9dcc416da4a290bcc5102ce46f104afefa",
+        "url": "https://github.com/JetBrains-Research/PyNose/tree/081e5f9dcc416da4a290bcc5102ce46f104afefa/plugin/src/test/resources/org/jetbrains/research/pynose/plugin/inspections/data/duplicate_assertion",
+        "notes": "Independently authored reproduction of the named test-quality concept; fixture code inherits Skylos Apache-2.0. External fixture annotations are references, not imported detector logic or independent accuracy labels."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "present": {
+          "quality": [
+            {
+              "rule_id": "SKY-L042",
+              "file": "test_case.py",
+              "start_line": 8,
+              "end_line": 8
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-duplicate-assertion-control",
+      "path": "fixtures/test_quality_duplicate_assertion_control",
+      "paired_with": "test-quality-duplicate-assertion-problematic",
+      "description": "An adjacent repeated assertion over a proven builtin integer adds no distinct check; the counterpart checks another property.",
+      "source": {
+        "repo": "https://github.com/JetBrains-Research/PyNose",
+        "license": "Apache-2.0",
+        "revision": "081e5f9dcc416da4a290bcc5102ce46f104afefa",
+        "url": "https://github.com/JetBrains-Research/PyNose/tree/081e5f9dcc416da4a290bcc5102ce46f104afefa/plugin/src/test/resources/org/jetbrains/research/pynose/plugin/inspections/data/duplicate_assertion",
+        "notes": "Independently authored reproduction of the named test-quality concept; fixture code inherits Skylos Apache-2.0. External fixture annotations are references, not imported detector logic or independent accuracy labels."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            {
+              "rule_id": "SKY-L042",
+              "file": "test_case.py",
+              "start_line": 9,
+              "end_line": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-sleep-completion-problematic",
+      "path": "fixtures/test_quality_sleep_completion_problematic",
+      "paired_with": "test-quality-sleep-completion-control",
+      "description": "A fixed delay before checking an Event can race with completion; the counterpart waits for an explicit signal with a bounded timeout.",
+      "source": {
+        "repo": "https://github.com/JetBrains-Research/PyNose",
+        "license": "Apache-2.0",
+        "revision": "081e5f9dcc416da4a290bcc5102ce46f104afefa",
+        "url": "https://github.com/JetBrains-Research/PyNose/tree/081e5f9dcc416da4a290bcc5102ce46f104afefa/plugin/src/test/resources/org/jetbrains/research/pynose/plugin/inspections/data/sleepy",
+        "notes": "Independently authored reproduction of the named test-quality concept; fixture code inherits Skylos Apache-2.0. External fixture annotations are references, not imported detector logic or independent accuracy labels."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "present": {
+          "quality": [
+            {
+              "rule_id": "SKY-L043",
+              "file": "test_case.py",
+              "start_line": 9,
+              "end_line": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-sleep-completion-control",
+      "path": "fixtures/test_quality_sleep_completion_control",
+      "paired_with": "test-quality-sleep-completion-problematic",
+      "description": "A fixed delay before checking an Event can race with completion; the counterpart waits for an explicit signal with a bounded timeout.",
+      "source": {
+        "repo": "https://github.com/JetBrains-Research/PyNose",
+        "license": "Apache-2.0",
+        "revision": "081e5f9dcc416da4a290bcc5102ce46f104afefa",
+        "url": "https://github.com/JetBrains-Research/PyNose/tree/081e5f9dcc416da4a290bcc5102ce46f104afefa/plugin/src/test/resources/org/jetbrains/research/pynose/plugin/inspections/data/sleepy",
+        "notes": "Independently authored reproduction of the named test-quality concept; fixture code inherits Skylos Apache-2.0. External fixture annotations are references, not imported detector logic or independent accuracy labels."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            {
+              "rule_id": "SKY-L043",
+              "file": "test_case.py",
+              "start_line": 8,
+              "end_line": 8
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-flow-reachable",
+      "path": "fixtures/test_quality_flow_reachable",
+      "paired_with": "test-quality-flow-unreachable",
+      "description": "Conditional loop exits preserve reachable constant, repeated-assertion and Event synchronization findings.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "revision": "825fc67f5bb264cd10db1efa57d640e6e131a20d",
+        "notes": "Independently authored regression and reachable/collection controls for the cleanup logic audit. Source is analyzed statically; fixture code is never executed."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "present": {
+          "quality": [
+            {
+              "rule_id": "SKY-L040",
+              "file": "test_case.py",
+              "start_line": 9,
+              "end_line": 9
+            },
+            {
+              "rule_id": "SKY-L042",
+              "file": "test_case.py",
+              "start_line": 18,
+              "end_line": 18
+            },
+            {
+              "rule_id": "SKY-L043",
+              "file": "test_case.py",
+              "start_line": 26,
+              "end_line": 26
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-flow-unreachable",
+      "path": "fixtures/test_quality_flow_unreachable",
+      "paired_with": "test-quality-flow-reachable",
+      "description": "Unconditional loop exits leave later weak-test patterns unreachable; no weak-test advice should be emitted for them.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "revision": "825fc67f5bb264cd10db1efa57d640e6e131a20d",
+        "notes": "Independently authored regression and reachable/collection controls for the cleanup logic audit. Source is analyzed statically; fixture code is never executed."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            {
+              "rule_id": "SKY-L040",
+              "file": "test_case.py",
+              "start_line": 8,
+              "end_line": 8
+            },
+            {
+              "rule_id": "SKY-L042",
+              "file": "test_case.py",
+              "start_line": 16,
+              "end_line": 16
+            },
+            {
+              "rule_id": "SKY-L043",
+              "file": "test_case.py",
+              "start_line": 23,
+              "end_line": 23
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-collection-mutation",
+      "path": "fixtures/test_quality_collection_mutation",
+      "paired_with": "test-quality-collection-live",
+      "description": "Opted-out and namespace-removed functions are not collected tests.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "revision": "825fc67f5bb264cd10db1efa57d640e6e131a20d",
+        "notes": "Independently authored regression and reachable/collection controls for the cleanup logic audit. Source is analyzed statically; fixture code is never executed."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            {
+              "rule_id": "SKY-L040",
+              "file": "test_case.py",
+              "start_line": 2,
+              "end_line": 2
+            },
+            {
+              "rule_id": "SKY-L040",
+              "file": "test_case.py",
+              "start_line": 9,
+              "end_line": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "test-quality-collection-live",
+      "path": "fixtures/test_quality_collection_live",
+      "paired_with": "test-quality-collection-mutation",
+      "description": "Read-only metadata and namespace inspection preserve an ordinary collected test.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "revision": "825fc67f5bb264cd10db1efa57d640e6e131a20d",
+        "notes": "Independently authored regression and reachable/collection controls for the cleanup logic audit. Source is analyzed statically; fixture code is never executed."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "present": {
+          "quality": [
+            {
+              "rule_id": "SKY-L040",
+              "file": "test_case.py",
+              "start_line": 2,
+              "end_line": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cleanup-fstring-debug-label",
+      "path": "fixtures/cleanup_fstring_debug_label",
+      "paired_with": "cleanup-fstring-ordinary-field",
+      "description": "Debug f-string expression text contributes to output and must not be claimed equivalent to a different expression label.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "revision": "825fc67f5bb264cd10db1efa57d640e6e131a20d",
+        "notes": "Independently authored source-preservation regression and ordinary-field control. These static expectations do not execute fixture code or establish repair equivalence."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            {
+              "rule_id": "SKY-L038",
+              "file": "app.py",
+              "start_line": 2,
+              "end_line": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cleanup-fstring-ordinary-field",
+      "path": "fixtures/cleanup_fstring_ordinary_field",
+      "paired_with": "cleanup-fstring-debug-label",
+      "description": "A literal prefix resembling a debug label does not suppress an ordinary equivalent f-string conversion.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "revision": "825fc67f5bb264cd10db1efa57d640e6e131a20d",
+        "notes": "Independently authored source-preservation regression and ordinary-field control. These static expectations do not execute fixture code or establish repair equivalence."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "present": {
+          "quality": [
+            {
+              "rule_id": "SKY-L038",
+              "file": "app.py",
+              "start_line": 2,
+              "end_line": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "typescript-npx-entrypoint",
+      "path": "fixtures/typescript_npx_entrypoint",
+      "description": "A known npx TypeScript runtime invokes its script operand; an unreferenced sibling remains dead.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "revision": "825fc67f5bb264cd10db1efa57d640e6e131a20d",
+        "notes": "Independently authored reduction of source-backed cleanup false positives. The native scanner reads fixture files without executing scripts, installing packages or importing target modules."
+      },
+      "scan": {
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "unused_files": [
+            {
+              "rule_id": "SKY-E003",
+              "file": "src/simulator.ts",
+              "start_line": 1,
+              "end_line": 1
+            }
+          ]
+        },
+        "present": {
+          "unused_files": [
+            {
+              "rule_id": "SKY-E003",
+              "file": "src/orphan.ts",
+              "start_line": 1,
+              "end_line": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "typescript-source-assets",
+      "path": "fixtures/typescript_source_assets",
+      "description": "Live native filesystem reads consume exact source assets and their public exports; unselected siblings and lookalike directories remain unused.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "revision": "825fc67f5bb264cd10db1efa57d640e6e131a20d",
+        "notes": "Independently authored reduction of source-backed cleanup false positives. The native scanner reads fixture files without executing scripts, installing packages or importing target modules."
+      },
+      "scan": {
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "unused_files": [
+            {
+              "rule_id": "SKY-E003",
+              "file": "content/exercises/one/starter.js",
+              "start_line": 1,
+              "end_line": 1
+            },
+            {
+              "rule_id": "SKY-E003",
+              "file": "content/exercises/one/solution.js",
+              "start_line": 1,
+              "end_line": 1
+            },
+            {
+              "rule_id": "SKY-E003",
+              "file": "content/exercises/one/tests.js",
+              "start_line": 1,
+              "end_line": 1
+            }
+          ],
+          "unused_functions": [
+            "starter",
+            "solution",
+            "tests"
+          ]
+        },
+        "present": {
+          "unused_files": [
+            {
+              "rule_id": "SKY-E003",
+              "file": "content/exercises/one/orphan.js",
+              "start_line": 1,
+              "end_line": 1
+            },
+            {
+              "rule_id": "SKY-E003",
+              "file": "other/exercises/one/solution.js",
+              "start_line": 1,
+              "end_line": 1
+            }
+          ],
+          "unused_functions": [
+            "orphan",
+            "unrelated"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-dependency-probe",
+      "path": "fixtures/python_dependency_probe",
+      "description": "A finite native importlib.util.find_spec loop is dependency exposure; an unrelated declared dependency still reports.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "revision": "825fc67f5bb264cd10db1efa57d640e6e131a20d",
+        "notes": "Independently authored reduction of source-backed cleanup false positives. The native scanner reads fixture files without executing scripts, installing packages or importing target modules."
+      },
+      "scan": {
+        "enable_quality": true,
+        "grep_verify": false
+      },
+      "expect": {
+        "absent": {
+          "quality": [
+            "backend-engine"
+          ]
+        },
+        "present": {
+          "quality": [
+            "retired-package"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-src-package-routes",
+      "path": "fixtures/python_src_package_routes",
+      "description": "FastAPI routes in a top-level package named src, imported as src.api.routes, stay alive when their router is included; an unmounted router and a plain helper are still reported.",
+      "source": {
+        "repo": "https://github.com/fastapi/fastapi",
+        "license": "MIT",
+        "notes": "Distilled from the official Bigger Applications layout (package of routers included with include_router), with the package named src."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "list_accounts",
+            "create_account",
+            "account_socket"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "orphan_helper",
+            "never_mounted_route"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-wrapper-decorator-registration",
+      "path": "fixtures/python_wrapper_decorator_registration",
+      "description": "A project decorator that applies a server tool registration to its argument keeps decorated functions alive; decorators that only wrap, cache or return the function do not.",
+      "source": {
+        "repo": "https://github.com/modelcontextprotocol/python-sdk",
+        "license": "MIT",
+        "notes": "Distilled from the documented tool() decorator, applied through a project wrapper as server.tool(name=...)(wrapper)."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "open_tab",
+            "close_tab",
+            "list_tabs",
+            "reload_tab",
+            "remote_click",
+            "remote_scroll"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "unused_logged",
+            "unused_cached",
+            "unused_identity",
+            "unused_late",
+            "unused_static",
+            "unused_lru",
+            "unused_remote_logged"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-decorator-factory-registration",
+      "path": "fixtures/python_decorator_factory_registration",
+      "description": "A third-party decorator factory called with a key registers the function; standard-library and retry wrappers, project wrap-only factories and argument-less calls do not.",
+      "source": {
+        "repo": "https://github.com/google/gin-config",
+        "license": "Apache-2.0",
+        "notes": "Distilled from the documented gin.configurable('name') registration that config files select by name."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "build_optimizer",
+            "build_network"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "unused_retried",
+            "unused_cached",
+            "unused_labelled",
+            "unused_empty_call",
+            "plain_unused"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-string-forward-references",
+      "path": "fixtures/python_string_forward_references",
+      "description": "Strings inside typing subscripts, cast() and TypeVar(bound=...) are forward references; names that only appear in prose strings are still reported.",
+      "source": {
+        "repo": "https://github.com/python/typing",
+        "license": "PSF-2.0",
+        "notes": "PEP 484 forward references and TYPE_CHECKING-only imports."
+      },
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "StandardData",
+            "RadioData",
+            "ExtraData",
+            "HistoryData",
+            "CastTarget"
+          ],
+          "unused_imports": [
+            "DataclassInstance",
+            "UUID"
+          ],
+          "unused_variables": [
+            "ItemData"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "OrphanData",
+            "LegacyData"
+          ],
+          "unused_imports": [
+            "Decimal",
+            "Fraction"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-dotted-path-registry",
+      "path": "fixtures/python_dotted_path_registry",
+      "description": "Classes named by full dotted path in a registry that a reachable function resolves with import_module and getattr stay alive; an unresolved path, an unused registry and an unlisted class are still reported.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "importlib.import_module plus getattr over a literal table of dotted paths."
+      },
+      "expect": {
+        "absent": {
+          "unused_classes": [
+            "AlphaModel",
+            "BetaModel"
+          ]
+        },
+        "present": {
+          "unused_classes": [
+            "AlphaLeftover",
+            "GammaModel",
+            "DeltaModel"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-local-import-binding",
+      "path": "fixtures/python_local_import_binding",
+      "description": "A function-local import that rebinds a parameter and is then read is used, and importing readline is an import for effect; unread, overwritten and ordinary unused imports are still reported.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Language-level binding rules for import statements and the documented readline effect on input()."
+      },
+      "expect": {
+        "absent": {
+          "unused_imports": [
+            "reactor",
+            "twisted.internet.task",
+            "recommend",
+            "readline"
+          ]
+        },
+        "present": {
+          "unused_imports": [
+            "pick_unused",
+            "pick_shadowed",
+            "bisect",
+            "getpass"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-base-class-protocol-members",
+      "path": "fixtures/python_base_class_protocol_members",
+      "description": "Members a documented base class reads by name stay alive (twisted Resource render_<METHOD>, distutils Command option attributes, pydantic inner Config); other members of the same classes are still reported.",
+      "source": {
+        "repo": "https://github.com/twisted/twisted",
+        "license": "MIT",
+        "notes": "twisted.web Resource.render dispatch; setuptools/distutils Command option parsing; pydantic model Config."
+      },
+      "expect": {
+        "absent": {
+          "unused_functions": [
+            "render_GET",
+            "render_POST"
+          ],
+          "unused_variables": [
+            "boolean_options",
+            "description",
+            "negative_opt",
+            "user_options"
+          ],
+          "unused_classes": [
+            "Config"
+          ]
+        },
+        "present": {
+          "unused_functions": [
+            "render_page"
+          ],
+          "unused_variables": [
+            "scratch_values",
+            "leftovers"
+          ],
+          "unused_classes": [
+            "Options"
+          ]
+        }
+      }
+    },
+    {
+      "id": "python-exec-namespace",
+      "path": "fixtures/python_exec_namespace",
+      "description": "Module bindings handed to exec(code, globals()), including names copied in by a star import, stay alive; imports beside exec/eval with a fresh namespace are still reported.",
+      "source": {
+        "repo": "https://github.com/python/cpython",
+        "license": "PSF-2.0",
+        "notes": "Built-in exec()/eval() namespace semantics."
+      },
+      "expect": {
+        "absent": {
+          "unused_imports": [
+            "list_profiles",
+            "sync_profile",
+            "recording_dir",
+            "start_recording"
+          ],
+          "unused_functions": [
+            "click"
+          ]
+        },
+        "present": {
+          "unused_imports": [
+            "stop_daemon",
+            "bisect"
+          ],
+          "unused_functions": [
+            "never_imported",
+            "recorder_internal_unused"
+          ]
+        }
+      }
+    },
+    {
+      "id": "frontend-component-import-graph",
+      "path": "fixtures/frontend_component_graph",
+      "description": "Component imports retain exact helper bindings through Vue, Svelte and Astro without loading orphan components.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "notes": "Original paired static source contract."
+      },
+      "expect": {
+        "present": {
+          "unused_functions": [
+            "summarizeVerbose",
+            "formatCompact",
+            "calculateTrend",
+            "renderTable"
+          ],
+          "unused_files": [
+            {
+              "rule_id": "SKY-E003",
+              "file": "table.ts",
+              "start_line": 1,
+              "end_line": 1
+            }
+          ]
+        },
+        "absent": {
+          "unused_functions": [
+            "summarize",
+            "format",
+            "calculate"
+          ]
+        }
+      }
+    },
+    {
+      "id": "module-local-enum-members",
+      "path": "fixtures/enum_member_usage",
+      "description": "Unused members of a local enum are distinguished from used members and opaque/public enum boundaries.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "notes": "Original paired static source contract."
+      },
+      "expect": {
+        "present": {
+          "unused_variables": [
+            {
+              "rule_id": "SKY-U007",
+              "file": "app.ts",
+              "start_line": 5,
+              "end_line": 5
+            }
+          ]
+        },
+        "absent": {
+          "unused_variables": [
+            {
+              "rule_id": "SKY-U007",
+              "file": "app.ts",
+              "start_line": 4,
+              "end_line": 4
+            },
+            {
+              "rule_id": "SKY-U007",
+              "file": "app.ts",
+              "start_line": 11,
+              "end_line": 11
+            },
+            {
+              "rule_id": "SKY-U007",
+              "file": "app.ts",
+              "start_line": 12,
+              "end_line": 12
+            },
+            {
+              "rule_id": "SKY-U007",
+              "file": "app.ts",
+              "start_line": 22,
+              "end_line": 22
+            },
+            {
+              "rule_id": "SKY-U007",
+              "file": "app.ts",
+              "start_line": 23,
+              "end_line": 23
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "npm-dependency-usage",
+      "path": "fixtures/npm_dependency_usage",
+      "description": "Complete package usage distinguishes unused declarations, undeclared imports and undeclared script binaries.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "notes": "Original paired static source contract."
+      },
+      "expect": {
+        "present": {
+          "quality": [
+            {
+              "rule_id": "SKY-U005",
+              "file": "package.json",
+              "start_line": 7,
+              "end_line": 7
+            },
+            {
+              "rule_id": "SKY-Q408",
+              "file": "app.ts",
+              "start_line": 2,
+              "end_line": 2
+            },
+            {
+              "rule_id": "SKY-Q409",
+              "file": "package.json",
+              "start_line": 15,
+              "end_line": 15
+            }
+          ]
+        },
+        "absent": {
+          "quality": [
+            {
+              "rule_id": "SKY-U005",
+              "file": "package.json",
+              "start_line": 6,
+              "end_line": 6
+            },
+            {
+              "rule_id": "SKY-U005",
+              "file": "package.json",
+              "start_line": 10,
+              "end_line": 10
+            },
+            {
+              "rule_id": "SKY-U005",
+              "file": "package.json",
+              "start_line": 11,
+              "end_line": 11
+            },
+            {
+              "rule_id": "SKY-Q408",
+              "file": "app.ts",
+              "start_line": 1,
+              "end_line": 1
+            },
+            {
+              "rule_id": "SKY-Q409",
+              "file": "package.json",
+              "start_line": 14,
+              "end_line": 14
+            }
+          ]
+        }
+      },
+      "scan": {
+        "enable_quality": true
+      }
+    },
+    {
+      "id": "php-blade-helper-consumers",
+      "path": "fixtures/php_blade_helpers",
+      "description": "Blade reads preserve used helpers and owning classes beside unused siblings.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "notes": "Original paired static source contract."
+      },
+      "expect": {
+        "present": {
+          "unused_functions": [
+            "legacy_asset"
+          ],
+          "unused_classes": [
+            "App.Util.UnusedTheme"
+          ]
+        },
+        "absent": {
+          "unused_functions": [
+            "asset_path"
+          ],
+          "unused_classes": [
+            "App.Util.Theme"
+          ]
+        }
+      }
+    },
+    {
+      "id": "private-exported-enum-members",
+      "path": "fixtures/private_exported_enum_members",
+      "description": "Private package enum imports preserve consumed members and report an unused sibling by exact provider identity.",
+      "source": {
+        "repo": "https://github.com/duriantaco/skylos",
+        "license": "Apache-2.0",
+        "notes": "Original paired static source contract."
+      },
+      "expect": {
+        "present": {
+          "unused_variables": [
+            {
+              "rule_id": "SKY-U007",
+              "file": "status.ts",
+              "start_line": 3,
+              "end_line": 3
+            }
+          ]
+        },
+        "absent": {
+          "unused_variables": [
+            {
+              "rule_id": "SKY-U007",
+              "file": "status.ts",
+              "start_line": 2,
+              "end_line": 2
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

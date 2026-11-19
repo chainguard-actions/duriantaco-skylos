@@ -1,0 +1,51 @@
+name: Test token input triggers non-fatal dashboard upload
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create a clean sample project
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/skylos-sample-token"
+          cat > "$GITHUB_WORKSPACE/skylos-sample-token/app.py" <<'EOF'
+          def main():
+              print("hello")
+
+
+          if __name__ == "__main__":
+              main()
+          EOF
+      - id: action
+        uses: .
+        with:
+          path: skylos-sample-token
+          mode: scan
+          token: invalid-skylos-test-token
+      - name: Assert scan completed despite upload with an invalid token
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "findings-count: $COUNT"
+          echo "report-path: $REPORT"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected action to succeed (upload failure must be non-fatal)"
+            exit 1
+          fi
+          if [ "$REPORT" != "skylos-report.json" ]; then
+            echo "FAIL: expected report-path skylos-report.json"
+            exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/skylos-report.json" ]; then
+            echo "FAIL: report file not found"
+            exit 1
+          fi
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not numeric"
+            exit 1
+          fi
+          echo "PASS"
