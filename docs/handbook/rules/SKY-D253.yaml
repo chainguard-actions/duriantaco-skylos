@@ -1,0 +1,159 @@
+id: SKY-D253
+title: Secret compared with == or ===
+family: security
+severity: MEDIUM
+languages: [TypeScript/JavaScript, Python]
+gate:
+  full: counted
+cwe: [CWE-208]
+
+what_it_is: >-
+  `===` and `==` stop at the first character that differs, so comparing a
+  secret this way takes slightly longer the more leading characters match.
+  SKY-D253 reports an equality check in TypeScript or JavaScript that puts
+  a secret the server holds (an environment or config credential, an HMAC
+  it computes, a stored token or password) against a value the attacker
+  sends. In Python it recognizes a keyed digest produced by the standard
+  hmac module compared with a runtime value using ordinary equality or
+  inequality.
+
+why_it_matters: >-
+  That time difference is a "timing side channel". An attacker who can send
+  many requests and measure the answers can guess a webhook signature or an
+  API key one character at a time. `crypto.timingSafeEqual()` always takes
+  the same time.
+
+flagged_example:
+  language: typescript
+  filename: src/webhooks/receive.ts
+  expect_line: 10
+  code: |
+    import crypto from "node:crypto";
+    import type { Request, Response } from "express";
+
+    const webhookKey = process.env.WEBHOOK_KEY ?? "";
+
+    export function receiveWebhook(req: Request, res: Response) {
+      const signature = req.get("x-signature") ?? "";
+      const body = JSON.stringify(req.body);
+      const expected = crypto.createHmac("sha256", webhookKey).update(body).digest("hex");
+      if (signature !== expected) {
+        return res.status(401).end();
+      }
+      res.status(204).end();
+    }
+
+not_flagged_example:
+  language: typescript
+  filename: src/webhooks/receive.ts
+  code: |
+    import crypto from "node:crypto";
+    import type { Request, Response } from "express";
+
+    const webhookKey = process.env.WEBHOOK_KEY ?? "";
+
+    export function receiveWebhook(req: Request, res: Response) {
+      const signature = Buffer.from(req.get("x-signature") ?? "", "hex");
+      const body = JSON.stringify(req.body);
+      const expected = crypto.createHmac("sha256", webhookKey).update(body).digest();
+      if (
+        signature.length !== expected.length ||
+        !crypto.timingSafeEqual(signature, expected)
+      ) {
+        return res.status(401).end();
+      }
+      res.status(204).end();
+    }
+  why: >-
+    `signature.length !== expected.length` compares two lengths, which are
+    public (`timingSafeEqual` needs equal lengths): a length is neither the
+    secret nor the request's guess. The secret bytes themselves are compared
+    with `crypto.timingSafeEqual()`.
+
+how_skylos_decides:
+  - >-
+    Runs with `--danger` on TypeScript and JavaScript files. Finds every
+    `==`, `===`, `!=` and `!==` expression.
+  - >-
+    Classifies each side. A secret is an environment or config value whose
+    key names a credential (`process.env.API_KEY`, `config.get('x.secret')`),
+    an HMAC built with `createHmac`, a member the function filled from one
+    of those, or a credential-named value that is neither request data nor
+    a parameter (`user.resetToken`, `storedHash`). The guess is request data
+    in the handler (`req.body.token`, `req.get('x-signature')`,
+    `request.headers.get(...)`, `formData.get(...)`, a destructured
+    `({ body }: Request)` field) or a local bound from it.
+  - >-
+    Reports MEDIUM when request data meets a secret, or when a parameter
+    meets an environment, config or HMAC secret (`key ===
+    process.env.ADMIN_KEY`). One finding per comparison.
+  - >-
+    Skips literals, `null`/`undefined` and booleans, two request fields
+    (a password and its confirmation), two values of unknown origin, hash or
+    digest calls (`hash(input) === stored`: the attacker cannot steer digest
+    bytes) and names that only end in token or hash (`location.hash`,
+    `ts.SyntaxKind.ExclamationToken`).
+
+source_refs:
+  - path: skylos/visitors/languages/typescript/danger.py
+    symbol: "def _check_timing_comparison"
+  - path: skylos/visitors/languages/typescript/timing_compare.py
+    symbol: "def comparison_secret(self, node)"
+    note: the secret and guess classification.
+  - path: test/test_typescript_expanded.py
+    symbol: "class TestTimingUnsafeComparison"
+
+fix:
+  explanation: >-
+    Turn both values into `Buffer`s, check that the lengths match, and
+    compare the bytes with `crypto.timingSafeEqual()`. For passwords, use a
+    password-hashing library such as bcrypt or argon2, whose `verify` call
+    already compares safely.
+  filename: src/webhooks/receive.ts
+  code: |
+    import crypto from "node:crypto";
+    import type { Request, Response } from "express";
+
+    const webhookKey = process.env.WEBHOOK_KEY ?? "";
+
+    export function receiveWebhook(req: Request, res: Response) {
+      const signature = Buffer.from(req.get("x-signature") ?? "", "hex");
+      const body = JSON.stringify(req.body);
+      const expected = crypto.createHmac("sha256", webhookKey).update(body).digest();
+      const valid =
+        signature.length === expected.length &&
+        crypto.timingSafeEqual(signature, expected);
+      if (!valid) {
+        return res.status(401).end();
+      }
+      res.status(204).end();
+    }
+
+false_alarms_and_suppression:
+  misfires:
+    - >-
+      A request value compared with a stored value whose name ends in
+      token, hash or secret is reported even when that value is public,
+      such as `req.query.etag === file.hash`.
+    - >-
+      Missed: secrets in variables with neutral names (`if (a === b)`),
+      secrets passed through helpers of other files, secrets added by a
+      schema `.transform()`, `Buffer.equals()`, Python comparisons other
+      than an hmac digest, and comparisons in Go or Java.
+  suppress:
+    - check: inline
+      text: >-
+        Mark the reported line and say why timing does not matter there.
+      language: typescript
+      code: |
+        if (fileHash !== cachedHash) { // skylos: ignore[SKY-D253] cache key, not a secret
+    - check: config
+      text: >-
+        `[tool.skylos] ignore = ["SKY-D253"]` turns the rule off for the
+        whole project.
+    - check: baseline
+      text: >-
+        `skylos baseline .` and then `--baseline` accept the existing
+        comparisons and report only new ones.
+
+related: [SKY-D282, SKY-D246, SKY-D232]

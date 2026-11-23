@@ -1,0 +1,24 @@
+name: Test scan mode reports findings on vulnerable code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/dirty
+          mode: scan
+          analysis: "dead-code security"
+      - name: Assert findings reported
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "count: $COUNT"
+          cat "$GITHUB_WORKSPACE/skylos-report.json" || true
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: expected at least one finding"; exit 1
+          fi
+          echo "PASS"

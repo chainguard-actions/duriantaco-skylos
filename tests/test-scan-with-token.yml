@@ -1,0 +1,34 @@
+name: Test scan mode with a Skylos token (upload non-fatal)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          path: tests/fixtures/clean
+          mode: scan
+          token: invalid-skylos-test-token
+      - name: Assert outputs
+        env:
+          COUNT: ${{ steps.action.outputs.findings-count }}
+          REPORT: ${{ steps.action.outputs.report-path }}
+          PASSED: ${{ steps.action.outputs.gate-passed }}
+        run: |
+          echo "count: $COUNT report: $REPORT passed: $PASSED"
+          if [ "$REPORT" != "skylos-report.json" ]; then
+            echo "FAIL: expected report-path skylos-report.json"; exit 1
+          fi
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count not a number"; exit 1
+          fi
+          if [ -n "$PASSED" ]; then
+            echo "FAIL: gate should not run in scan mode"; exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/skylos-report.json" ]; then
+            echo "FAIL: report file missing"; exit 1
+          fi
+          echo "PASS: scan succeeded; upload with invalid token was non-fatal"

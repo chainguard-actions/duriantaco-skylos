@@ -1,0 +1,35 @@
+name: Test gate mode passes on clean code
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # The action's own repo has .github/workflows files that Skylos flags
+      # (SKY-D29x), so scanning inside the workspace never yields a clean gate.
+      # Copy the clean fixture to an isolated directory outside the repository.
+      - name: Stage clean fixture outside the repository
+        run: |
+          rm -rf "$RUNNER_TEMP/skylos-clean"
+          mkdir -p "$RUNNER_TEMP/skylos-clean"
+          cp -R "$GITHUB_WORKSPACE/tests/fixtures/clean/." "$RUNNER_TEMP/skylos-clean/"
+          ls -la "$RUNNER_TEMP/skylos-clean"
+      - id: action
+        uses: .
+        with:
+          path: ${{ runner.temp }}/skylos-clean
+          mode: gate
+      - name: Assert gate passed
+        env:
+          PASSED: ${{ steps.action.outputs.gate-passed }}
+          COUNT: ${{ steps.action.outputs.findings-count }}
+        run: |
+          echo "passed: $PASSED count: $COUNT"
+          if [ "$PASSED" != "true" ]; then
+            echo "FAIL: expected gate-passed true"; exit 1
+          fi
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "FAIL: findings-count is not numeric"; exit 1
+          fi
+          echo "PASS"

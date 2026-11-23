@@ -1,0 +1,138 @@
+import sys
+
+from skylos.constants import SUPPORTED_LANGUAGES_TEXT
+
+STEPS = [
+    {
+        "title": "Welcome to Skylos",
+        "step": 1,
+        "body": (
+            "[bold]Skylos[/bold] finds dead code, security vulnerabilities, and quality\n"
+            f"issues in [bold cyan]{SUPPORTED_LANGUAGES_TEXT}[/bold cyan] codebases.\n"
+            "Coverage is deepest in Python, TypeScript/JavaScript and Java. Rust\n"
+            "dead code is experimental, Kotlin dead code covers private symbols\n"
+            "and imports, C++ covers unused file-local functions, and Shell gets\n"
+            "security checks only.\n"
+            "\n"
+            "It runs static analysis locally, and can optionally ask an LLM\n"
+            "to double-check findings before you act on them."
+        ),
+    },
+    {
+        "title": "Quick Scan",
+        "step": 2,
+        "body": (
+            "[bold]Everything local[/bold] (static + debt + defense + provenance):\n"
+            "  [bold cyan]skylos suite .[/bold cyan]\n"
+            "\n"
+            "[bold]Basic scan[/bold] (dead code only):\n"
+            "  [bold cyan]skylos .[/bold cyan]\n"
+            "\n"
+            "[bold]Full scan[/bold] (dead code + security + secrets + quality):\n"
+            "  [bold cyan]skylos . -a[/bold cyan]\n"
+            "\n"
+            "[bold]Scan specific paths[/bold]:\n"
+            "  [bold cyan]skylos src/ lib/[/bold cyan]\n"
+            "\n"
+            "[dim]Output formats: --json, --sarif, --tree, --tui[/dim]"
+        ),
+    },
+    {
+        "title": "AI review",
+        "step": 3,
+        "body": (
+            "[bold]Let an AI double-check unused code and Python security issues[/bold]\n"
+            "(each issue gets an AI verdict; blocking never changes):\n"
+            "  [bold cyan]skylos . -a --ai-review[/bold cyan]\n"
+            "\n"
+            "[bold]Review only unused code, with an LLM, Jev or both[/bold]:\n"
+            "  [bold cyan]skylos agent verify .[/bold cyan]\n"
+            "\n"
+            "[bold]Auto-fix and create PR[/bold]:\n"
+            "  [bold cyan]skylos agent remediate .[/bold cyan]\n"
+            "\n"
+            "[bold]Hybrid static + LLM scan[/bold]:\n"
+            "  [bold cyan]skylos agent scan .[/bold cyan]\n"
+            "\n"
+            "[dim]Requires an API key: skylos key[/dim]"
+        ),
+    },
+    {
+        "title": "AI app safety",
+        "step": 4,
+        "body": (
+            "[bold]Map LLM integrations[/bold] in your codebase:\n"
+            "  [bold cyan]skylos discover .[/bold cyan]\n"
+            "\n"
+            "[bold]Check for missing defenses[/bold] (OWASP LLM/Agentic Top 10):\n"
+            "  [bold cyan]skylos defend .[/bold cyan]\n"
+            "\n"
+            "Detects prompt injection risks, missing PII filters,\n"
+            "RAG isolation gaps, rate limiting, and more."
+        ),
+    },
+    {
+        "title": "CI/CD Integration",
+        "step": 5,
+        "body": (
+            "[bold]Set up a pull request gate for your CI[/bold] (GitHub, GitLab, Jenkins, ...):\n"
+            "  [bold cyan]skylos cicd init[/bold cyan]\n"
+            "\n"
+            "[bold]Quality gate[/bold] (fail CI on findings):\n"
+            "  [bold cyan]skylos cicd gate[/bold cyan]\n"
+            "\n"
+            "[bold]Post Skylos findings as inline PR comments[/bold] (GitHub):\n"
+            "  [bold cyan]skylos cicd review[/bold cyan]"
+        ),
+    },
+    {
+        "title": "What's Next",
+        "step": 6,
+        "body": (
+            "[bold]See all commands:[/bold]\n"
+            "  [bold cyan]skylos commands[/bold cyan]\n"
+            "\n"
+            "[bold]Get help on any command:[/bold]\n"
+            "  [bold cyan]skylos <command> --help[/bold cyan]\n"
+            "\n"
+            "[bold]Track results per branch on Skylos Cloud:[/bold]\n"
+            "  [bold cyan]skylos cloud[/bold cyan]\n"
+            "\n"
+            "[bold]Docs:[/bold] [blue]github.com/duriantaco/skylos[/blue]"
+        ),
+    },
+]
+
+TOTAL_STEPS = len(STEPS)
+
+
+def run_tour(console):
+    from rich.panel import Panel
+
+    is_tty = sys.stdin.isatty()
+
+    for i, step in enumerate(STEPS):
+        title = f"[bold cyan][{step['step']}/{TOTAL_STEPS}] {step['title']}[/bold cyan]"
+
+        console.print()
+        console.print(
+            Panel(
+                step["body"],
+                title=title,
+                border_style="cyan",
+                padding=(1, 2),
+            )
+        )
+
+        if is_tty and i < len(STEPS) - 1:
+            try:
+                input("\n  Press Enter to continue...")
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                return
+
+    console.print()
+    console.print(
+        "  [bold green]Tour complete![/bold green] Run [bold]skylos .[/bold] to start scanning."
+    )
+    console.print()

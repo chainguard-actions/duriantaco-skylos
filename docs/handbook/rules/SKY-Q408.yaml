@@ -1,0 +1,101 @@
+id: SKY-Q408
+title: Undeclared npm dependency
+family: quality
+severity: MEDIUM
+languages:
+- TypeScript
+- JavaScript
+- package.json
+gate:
+  full: counted
+  note: Reported as quality; counts toward max_quality.
+run_with: '`skylos . --quality`'
+what_it_is: A literal source import, type reference or supported configuration use names an npm
+  package that neither the owning package.json nor an ancestor workspace declares. With
+  `strict_dependencies = true`, production source of a published package needs its own
+  declaration.
+why_it_matters: The source may work only because a different workspace or a transitive dependency
+  happened to install the package. A clean install or dependency upgrade can then fail.
+flagged_example:
+  language: javascript
+  expect_file: src/app.js
+  expect_line: 1
+  files:
+  - filename: package.json
+    language: json
+    code: |
+      {"name":"shop","version":"1.0.0","main":"src/app.js","dependencies":{}}
+  - filename: src/app.js
+    code: |
+      import "chalk";
+not_flagged_example:
+  language: javascript
+  files:
+  - filename: package.json
+    language: json
+    code: |
+      {"name":"shop","version":"1.0.0","dependencies":{"chalk":"^5.0.0"}}
+  - filename: src/app.js
+    code: |
+      import "chalk";
+  why: The owning manifest explicitly declares the imported package.
+how_skylos_decides:
+- Runs with quality analysis and reads package manifests without installing packages or running
+  package scripts.
+- Assigns source files to their nearest package.json; a nested one that declares no name,
+  dependencies, workspaces, scripts or binaries (a marker holding only `type`) does not own
+  files. Reads literal imports, re-exports, require/import
+  calls, `/// <reference types>` directives, tsconfig `types` entries and supported literal tool
+  configuration, including Vue, Svelte and Astro script blocks and top-level MDX ESM (fenced code
+  and prose are ignored). Built-ins, local paths, proven workspace aliases and framework module
+  aliases such as Docusaurus @theme/* are excluded.
+- Node resolution walks up to ancestor node_modules, so an ancestor workspace's declaration
+  satisfies every file below it by default; the receipt counts published
+  production imports that rely on one (`ancestor_declared_production_imports`). With
+  `[tool.skylos] strict_dependencies = true` published production
+  source needs its own declaration and the finding names the `ancestor_manifest`. A sibling
+  workspace's declaration never counts.
+- A workspace package that tsconfig `paths` or a readable bundler alias maps to project source
+  is not reported outside published production source. Fixture text that codemod harnesses read
+  (`__testfixtures__/`, `__fixtures__/`, `fixtures/**/input.*`/`output.*`) and JSDoc `import()`
+  types outside published production source are usage evidence only. A type-only import is
+  satisfied by the matching `@types/` declaration.
+- Stylesheets are usage evidence only, except unambiguous package references (Sass pkg:name URLs and
+  Tailwind @plugin names); a bare CSS @import can be a local file or load path and is never
+  reported.
+- Checks dependencies, devDependencies, optionalDependencies and peerDependencies in the owner.
+  Reports MEDIUM at the source or configuration use when its package is missing.
+- Does not claim that the registry package exists or that an SDK API is valid. Unknown loaders
+  and unread source are recorded in analysis_summary.npm_dependency_analysis and cannot prove
+  dependency non-use.
+source_refs:
+- path: skylos/rules/quality/npm_dependencies.py
+  symbol: def scan_npm_dependencies(
+- path: test/test_npm_dependency_usage.py
+  symbol: def test_literal_unlisted_dependency_is_reported_at_source
+- path: test/test_npm_dependency_workspaces.py
+  symbol: def test_tooling_files_resolve_ancestor_declarations
+- path: test/test_npm_dependency_workspaces.py
+  symbol: def test_published_source_ancestor_declaration_is_strict_only
+fix:
+  explanation: Declare the intended package in the manifest that owns the source, using an
+    appropriate dependency section and version, or remove the unwanted import.
+  language: json
+  filename: package.json
+  code: |
+    {"name":"shop","version":"1.0.0","dependencies":{"chalk":"^5.0.0"}}
+false_alarms_and_suppression:
+  misfires:
+  - A deployment may deliberately provide an undeclared package globally; the repository alone
+    does not declare that contract.
+  - A published package's production file that is never shipped (excluded from `files` or the
+    build) is still treated as published source.
+  - Only bounded literal source/configuration forms are read. Unknown configuration is recorded
+    rather than executed.
+  suppress:
+  - check: config
+    text: Set `[tool.skylos] ignore = ["SKY-Q408"]` to disable this rule project-wide.
+related:
+- SKY-U005
+- SKY-Q409
+- SKY-D222
